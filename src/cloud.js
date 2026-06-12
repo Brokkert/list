@@ -49,6 +49,8 @@ export async function listCloudProfiles() {
   });
 }
 
+let lastKnownUpdatedAt = null;
+
 export async function loadProfile(slug) {
   const { data, error } = await supabase
     .from(TABLE)
@@ -60,7 +62,9 @@ export async function loadProfile(slug) {
     setStatus('error');
     throw error;
   }
+  setStatus('online');
   if (!data?.state) return null;
+  lastKnownUpdatedAt = data.updated_at;
   return { state: JSON.parse(data.state), updatedAt: data.updated_at };
 }
 
@@ -108,6 +112,7 @@ async function flushSave() {
   } else {
     pending = null;
     lastSavedUpdatedAt = updated_at;
+    lastKnownUpdatedAt = updated_at;
     lastError = null;
     setStatus('online');
   }
@@ -126,6 +131,11 @@ export async function deleteProfile(slug) {
 }
 
 export function subscribeProfile(slug, onRemoteState) {
+  const apply = (state, updatedAt) => {
+    lastKnownUpdatedAt = updatedAt || lastKnownUpdatedAt;
+    onRemoteState(state);
+  };
+
   const channel = supabase
     .channel(`paklijst_${slug}`)
     .on(
@@ -136,15 +146,40 @@ export function subscribeProfile(slug, onRemoteState) {
         if (!row?.state) return;
         if (row.updated_at && row.updated_at === lastSavedUpdatedAt) return; // eigen echo
         try {
-          onRemoteState(JSON.parse(row.state));
+          apply(JSON.parse(row.state), row.updated_at);
         } catch (e) {
           console.warn('[paklijst] kon remote state niet parsen:', e);
         }
       }
     )
     .subscribe((s) => {
-      if (s === 'SUBSCRIBED') setStatus('online');
-      if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') setStatus('error');
+      // Realtime is een nice-to-have: een kapot kanaal is geen sync-fout,
+      // de polling hieronder vangt wijzigingen alsnog op.
+      if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') {
+        console.warn('[paklijst] realtime-kanaal:', s);
+      }
     });
-  return () => supabase.removeChannel(channel);
+
+  // Polling-fallback: elke 30s checken of een ander apparaat iets wijzigde.
+  const poll = setInterval(async () => {
+    if (pending) return; // eigen wijziging onderweg, niet overschrijven
+    try {
+      const { data, error } = await supabase
+        .from(TABLE)
+        .select('state, updated_at')
+        .eq('id', keyFor(slug))
+        .maybeSingle();
+      if (error || !data?.state) return;
+      if (data.updated_at && data.updated_at !== lastKnownUpdatedAt && data.updated_at !== lastSavedUpdatedAt) {
+        apply(JSON.parse(data.state), data.updated_at);
+      }
+    } catch {
+      /* tijdelijke netwerkfout; volgende poll probeert opnieuw */
+    }
+  }, 30000);
+
+  return () => {
+    clearInterval(poll);
+    supabase.removeChannel(channel);
+  };
 }

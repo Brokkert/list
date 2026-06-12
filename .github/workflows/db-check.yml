@@ -1,0 +1,32 @@
+name: DB check
+
+# Diagnose: test de Supabase REST API vanuit Actions (de tabel, anon-rechten
+# en bestaande rijen). Handmatig of bij push op de dev-branch.
+on:
+  push:
+    branches: [claude/vacation-packing-lists-2g55ue]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lees rijen (id + updated_at)
+        run: |
+          curl -s -w "\nHTTP %{http_code}\n" \
+            "https://anglxcniiktoenoqapqz.supabase.co/rest/v1/paklijst_shared?select=id,updated_at" \
+            -H "apikey: sb_publishable_qyGsqcHIofui-1rI0WZadQ_cb91iv26" \
+            -H "Authorization: Bearer sb_publishable_qyGsqcHIofui-1rI0WZadQ_cb91iv26"
+      - name: Test schrijven (upsert + delete van testrij)
+        run: |
+          curl -s -w "\nHTTP %{http_code}\n" -X POST \
+            "https://anglxcniiktoenoqapqz.supabase.co/rest/v1/paklijst_shared" \
+            -H "apikey: sb_publishable_qyGsqcHIofui-1rI0WZadQ_cb91iv26" \
+            -H "Authorization: Bearer sb_publishable_qyGsqcHIofui-1rI0WZadQ_cb91iv26" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates" \
+            -d '{"id":"paklijst:dbcheck","state":"{}"}'
+          curl -s -w "\nHTTP %{http_code}\n" -X DELETE \
+            "https://anglxcniiktoenoqapqz.supabase.co/rest/v1/paklijst_shared?id=eq.paklijst:dbcheck" \
+            -H "apikey: sb_publishable_qyGsqcHIofui-1rI0WZadQ_cb91iv26" \
+            -H "Authorization: Bearer sb_publishable_qyGsqcHIofui-1rI0WZadQ_cb91iv26"
