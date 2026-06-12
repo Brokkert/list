@@ -160,6 +160,10 @@ input, select { font-family: inherit; font-size: 16px; }
 }
 .itemrow .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .itemrow.packed .name { text-decoration: line-through; color: var(--muted); }
+.itemrow.skipped { opacity: 0.6; }
+.itemrow.skipped .name { text-decoration: line-through; color: var(--muted); }
+.iconbtn.active { color: var(--danger); }
+.badge.off { background: #f9e9e7; color: var(--danger); }
 .check {
   width: 26px;
   height: 26px;

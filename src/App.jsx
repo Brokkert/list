@@ -42,10 +42,12 @@ function groupByCat(gear, cats) {
 }
 
 function listProgress(list) {
-  const extras = list.extras || [];
-  const total = list.items.length + extras.length;
-  const packed = list.items.filter((i) => i.packed).length + extras.filter((i) => i.packed).length;
-  return { total, packed, pct: total ? Math.round((packed / total) * 100) : 0 };
+  const all = [...list.items, ...(list.extras || [])];
+  const total = all.length;
+  const packed = all.filter((i) => i.packed).length;
+  const skipped = all.filter((i) => !i.packed && i.skip).length;
+  const done = packed + skipped;
+  return { total, packed, skipped, done, pct: total ? Math.round((done / total) * 100) : 0 };
 }
 
 function useSyncStatus() {
@@ -316,12 +318,12 @@ function ListsView({ state, mutate, onOpen }) {
               <div className="grow">
                 <div className="title">{list.name}</div>
                 <div className="muted">
-                  {p.packed}/{p.total} ingepakt{list.note ? ` · ${list.note}` : ''}
+                  {p.done}/{p.total} ingepakt{p.skipped ? ` (${p.skipped} niet mee)` : ''}{list.note ? ` · ${list.note}` : ''}
                 </div>
               </div>
-              {p.total > 0 && p.packed === p.total && <span className="badge">klaar ✓</span>}
+              {p.total > 0 && p.done === p.total && <span className="badge">klaar ✓</span>}
             </div>
-            <div className={`progress${p.total && p.packed === p.total ? ' done' : ''}`}>
+            <div className={`progress${p.total && p.done === p.total ? ' done' : ''}`}>
               <div style={{ width: `${p.pct}%` }} />
             </div>
           </div>
@@ -420,15 +422,15 @@ function ListDetail({ list, state, mutate, onClose }) {
         <div className="row">
           <div className="grow">
             <b>
-              {p.packed}/{p.total}
+              {p.done}/{p.total}
             </b>{' '}
-            <span className="muted">ingepakt</span>
+            <span className="muted">ingepakt{p.skipped ? ` · ${p.skipped} niet mee` : ''}</span>
           </div>
           <button className="btn small secondary" onClick={() => setEditing(true)}>
             ✏️ bewerk
           </button>
         </div>
-        <div className={`progress${p.total && p.packed === p.total ? ' done' : ''}`}>
+        <div className={`progress${p.total && p.done === p.total ? ' done' : ''}`}>
           <div style={{ width: `${p.pct}%` }} />
         </div>
       </div>
@@ -448,19 +450,40 @@ function ListDetail({ list, state, mutate, onClose }) {
           {items.map((it) => {
             const gear = gearById[it.gearId];
             return (
-              <div key={it.gearId} className={`itemrow${it.packed ? ' packed' : ''}`}>
+              <div key={it.gearId} className={`itemrow${it.packed ? ' packed' : ''}${it.skip ? ' skipped' : ''}`}>
                 <button
                   className={`check${it.packed ? ' on' : ''}`}
-                  onClick={() => patchItem(it.gearId, (x) => (x.packed = !x.packed))}
+                  onClick={() =>
+                    patchItem(it.gearId, (x) => {
+                      x.packed = !x.packed;
+                      if (x.packed) x.skip = false;
+                    })
+                  }
                 >
                   {it.packed ? '✓' : ''}
                 </button>
                 <span className="name">{gear?.name || '(verwijderd item)'}</span>
-                <span className="qty">
-                  <button onClick={() => patchItem(it.gearId, (x) => (x.qty = Math.max(1, x.qty - 1)))}>−</button>
-                  <span>{it.qty}</span>
-                  <button onClick={() => patchItem(it.gearId, (x) => (x.qty += 1))}>+</button>
-                </span>
+                {it.skip ? (
+                  <span className="badge off">niet mee</span>
+                ) : (
+                  <span className="qty">
+                    <button onClick={() => patchItem(it.gearId, (x) => (x.qty = Math.max(1, x.qty - 1)))}>−</button>
+                    <span>{it.qty}</span>
+                    <button onClick={() => patchItem(it.gearId, (x) => (x.qty += 1))}>+</button>
+                  </span>
+                )}
+                <button
+                  className={`iconbtn${it.skip ? ' active' : ''}`}
+                  title="Dit keer niet mee"
+                  onClick={() =>
+                    patchItem(it.gearId, (x) => {
+                      x.skip = !x.skip;
+                      if (x.skip) x.packed = false;
+                    })
+                  }
+                >
+                  ⊘
+                </button>
                 <button
                   className="iconbtn"
                   title="Uit lijstje halen"
@@ -484,19 +507,40 @@ function ListDetail({ list, state, mutate, onClose }) {
         <div className="catsec">
           <h3>✨ Los in dit lijstje</h3>
           {(list.extras || []).map((it) => (
-            <div key={it.id} className={`itemrow${it.packed ? ' packed' : ''}`}>
+            <div key={it.id} className={`itemrow${it.packed ? ' packed' : ''}${it.skip ? ' skipped' : ''}`}>
               <button
                 className={`check${it.packed ? ' on' : ''}`}
-                onClick={() => patchExtra(it.id, (x) => (x.packed = !x.packed))}
+                onClick={() =>
+                  patchExtra(it.id, (x) => {
+                    x.packed = !x.packed;
+                    if (x.packed) x.skip = false;
+                  })
+                }
               >
                 {it.packed ? '✓' : ''}
               </button>
               <span className="name">{it.name}</span>
-              <span className="qty">
-                <button onClick={() => patchExtra(it.id, (x) => (x.qty = Math.max(1, x.qty - 1)))}>−</button>
-                <span>{it.qty}</span>
-                <button onClick={() => patchExtra(it.id, (x) => (x.qty += 1))}>+</button>
-              </span>
+              {it.skip ? (
+                <span className="badge off">niet mee</span>
+              ) : (
+                <span className="qty">
+                  <button onClick={() => patchExtra(it.id, (x) => (x.qty = Math.max(1, x.qty - 1)))}>−</button>
+                  <span>{it.qty}</span>
+                  <button onClick={() => patchExtra(it.id, (x) => (x.qty += 1))}>+</button>
+                </span>
+              )}
+              <button
+                className={`iconbtn${it.skip ? ' active' : ''}`}
+                title="Dit keer niet mee"
+                onClick={() =>
+                  patchExtra(it.id, (x) => {
+                    x.skip = !x.skip;
+                    if (x.skip) x.packed = false;
+                  })
+                }
+              >
+                ⊘
+              </button>
               <button
                 className="iconbtn"
                 title="Uit lijstje halen"
@@ -525,8 +569,10 @@ function ListDetail({ list, state, mutate, onClose }) {
           onClick={() =>
             mutate((s) => {
               const l = s.lists.find((x) => x.id === list.id);
-              l.items.forEach((it) => (it.packed = false));
-              (l.extras || []).forEach((it) => (it.packed = false));
+              for (const it of [...l.items, ...(l.extras || [])]) {
+                it.packed = false;
+                it.skip = false;
+              }
               return s;
             })
           }
@@ -540,8 +586,11 @@ function ListDetail({ list, state, mutate, onClose }) {
               const copy = structuredClone(s.lists.find((x) => x.id === list.id));
               copy.id = uid();
               copy.name = `${copy.name} (kopie)`;
-              copy.items.forEach((it) => (it.packed = false));
-              copy.extras = (copy.extras || []).map((it) => ({ ...it, id: uid(), packed: false }));
+              copy.items.forEach((it) => {
+                it.packed = false;
+                it.skip = false;
+              });
+              copy.extras = (copy.extras || []).map((it) => ({ ...it, id: uid(), packed: false, skip: false }));
               s.lists.push(copy);
               return s;
             })
