@@ -7,6 +7,7 @@ import {
   subscribeProfile,
   onStatus,
   getStatus,
+  getLastError,
 } from './cloud.js';
 import { CATS, uid, seedState } from './seed.js';
 
@@ -223,9 +224,20 @@ function Main({ email, state, mutate, onLogout }) {
           )}
           <span className="sub">{email}</span>
         </h1>
-        <span className="syncdot" title={STATUS_LABEL[status]}>
+        <button
+          className="syncdot"
+          title={STATUS_LABEL[status]}
+          onClick={() => {
+            const err = getLastError();
+            alert(
+              `Sync-status: ${STATUS_LABEL[status]}` +
+                (err ? `\n\nLaatste fout: ${err}` : '') +
+                `\n\nJe data staat altijd ook lokaal op dit apparaat opgeslagen; zodra de verbinding werkt wordt alles alsnog gesynchroniseerd.`
+            );
+          }}
+        >
           {STATUS_ICON[status]}
-        </span>
+        </button>
         {openList ? (
           <button className="linkbtn" onClick={() => setOpenListId(null)}>
             ← terug

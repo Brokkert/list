@@ -30,7 +30,11 @@ export async function listCloudProfiles() {
     .from(TABLE)
     .select('id, state, updated_at')
     .like('id', `${PREFIX}%`);
-  if (error) throw error;
+  if (error) {
+    lastError = error.message;
+    setStatus('error');
+    throw error;
+  }
   return (data || []).map((row) => {
     const slug = row.id.slice(PREFIX.length);
     let email = slug;
@@ -52,7 +56,11 @@ export async function loadProfile(slug) {
     .select('state, updated_at')
     .eq('id', keyFor(slug))
     .maybeSingle();
-  if (error) throw error;
+  if (error) {
+    lastError = error.message;
+    setStatus('error');
+    throw error;
+  }
   if (!data?.state) return null;
   return { state: JSON.parse(data.state), updatedAt: data.updated_at };
 }
@@ -61,6 +69,8 @@ let saveTimer = null;
 let lastSavedUpdatedAt = null;
 let statusListeners = new Set();
 let status = 'offline'; // offline | syncing | online | error
+let lastError = null;
+let pending = null; // laatste niet-opgeslagen { slug, state }
 
 function setStatus(s) {
   status = s;
@@ -69,27 +79,46 @@ function setStatus(s) {
 export function getStatus() {
   return status;
 }
+export function getLastError() {
+  return lastError;
+}
 export function onStatus(fn) {
   statusListeners.add(fn);
   return () => statusListeners.delete(fn);
 }
 
+async function flushSave() {
+  if (!pending) return;
+  const { slug, state } = pending;
+  const updated_at = new Date().toISOString();
+  let error = null;
+  try {
+    ({ error } = await supabase
+      .from(TABLE)
+      .upsert({ id: keyFor(slug), state: JSON.stringify(state), updated_at }, { onConflict: 'id' }));
+  } catch (e) {
+    error = e;
+  }
+  if (error) {
+    console.warn('[paklijst] save error:', error.message);
+    lastError = error.message;
+    setStatus('error');
+    // blijven proberen tot het lukt; pending bevat altijd de nieuwste state
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushSave, 15000);
+  } else {
+    pending = null;
+    lastSavedUpdatedAt = updated_at;
+    lastError = null;
+    setStatus('online');
+  }
+}
+
 export function saveProfileDebounced(slug, state) {
+  pending = { slug, state };
   clearTimeout(saveTimer);
   setStatus('syncing');
-  saveTimer = setTimeout(async () => {
-    const updated_at = new Date().toISOString();
-    const { error } = await supabase
-      .from(TABLE)
-      .upsert({ id: keyFor(slug), state: JSON.stringify(state), updated_at }, { onConflict: 'id' });
-    if (error) {
-      console.warn('[paklijst] save error:', error.message);
-      setStatus('error');
-    } else {
-      lastSavedUpdatedAt = updated_at;
-      setStatus('online');
-    }
-  }, 700);
+  saveTimer = setTimeout(flushSave, 700);
 }
 
 export async function deleteProfile(slug) {
