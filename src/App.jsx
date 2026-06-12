@@ -16,12 +16,26 @@ const cacheKey = (slug) => `paklijst:cache:${slug}`;
 
 const EMOJIS = ['🌞', '🏖️', '⛷️', '🏂', '🏕️', '🚗', '✈️', '🚆', '🛳️', '🥾', '🎉', '👶', '💼', '🧳'];
 
-const catById = (id) => CATS.find((c) => c.id === id) || CATS[CATS.length - 1];
+// Oudere profielen hebben nog geen eigen categorielijst; geef ze de
+// standaardset en verhuis vermaak-items naar de nieuwe categorie.
+function migrate(s) {
+  if (!s.cats?.length) {
+    s.cats = CATS;
+    for (const g of s.gear || []) {
+      if (g.cat === 'onderweg' && ['Spelletjes / kaarten', 'Boek / tijdschrift'].includes(g.name)) {
+        g.cat = 'vermaak';
+      }
+    }
+  }
+  return s;
+}
 
-function groupByCat(gear) {
+function groupByCat(gear, cats) {
+  const known = new Set(cats.map((c) => c.id));
+  const fallback = cats.find((c) => c.id === 'overig') || cats[cats.length - 1];
   const groups = [];
-  for (const cat of CATS) {
-    const items = gear.filter((g) => g.cat === cat.id);
+  for (const cat of cats) {
+    const items = gear.filter((g) => g.cat === cat.id || (cat === fallback && !known.has(g.cat)));
     if (items.length) groups.push({ cat, items });
   }
   return groups;
@@ -68,7 +82,7 @@ export default function App() {
     const cached = localStorage.getItem(cacheKey(slug));
     if (cached) {
       try {
-        setState(JSON.parse(cached));
+        setState(migrate(JSON.parse(cached)));
       } catch { /* kapotte cache negeren */ }
     }
 
@@ -79,8 +93,9 @@ export default function App() {
         if (remote) {
           const local = stateRef.current;
           if (!local || !local.updatedAt || remote.state.updatedAt >= local.updatedAt) {
-            setState(remote.state);
-            localStorage.setItem(cacheKey(slug), JSON.stringify(remote.state));
+            const rs = migrate(remote.state);
+            setState(rs);
+            localStorage.setItem(cacheKey(slug), JSON.stringify(rs));
           } else {
             saveProfileDebounced(slug, local);
           }
@@ -103,8 +118,9 @@ export default function App() {
     })();
 
     const unsub = subscribeProfile(slug, (remoteState) => {
-      setState(remoteState);
-      localStorage.setItem(cacheKey(slug), JSON.stringify(remoteState));
+      const rs = migrate(remoteState);
+      setState(rs);
+      localStorage.setItem(cacheKey(slug), JSON.stringify(rs));
     });
     return () => {
       cancelled = true;
@@ -365,15 +381,20 @@ function ListDetail({ list, state, mutate, onClose }) {
   const [editing, setEditing] = useState(false);
   const p = listProgress(list);
 
+  const cats = state.cats || CATS;
   const gearById = useMemo(() => Object.fromEntries(state.gear.map((g) => [g.id, g])), [state.gear]);
   const grouped = useMemo(() => {
+    const known = new Set(cats.map((c) => c.id));
     const groups = [];
-    for (const cat of CATS) {
-      const items = list.items.filter((it) => (gearById[it.gearId]?.cat || 'overig') === cat.id);
+    for (const cat of cats) {
+      const items = list.items.filter((it) => {
+        const c = gearById[it.gearId]?.cat;
+        return (known.has(c) ? c : 'overig') === cat.id;
+      });
       if (items.length) groups.push({ cat, items });
     }
     return groups;
-  }, [list.items, gearById]);
+  }, [list.items, gearById, cats]);
 
   function patchItem(gearId, fn) {
     mutate((s) => {
@@ -568,10 +589,11 @@ function ListDetail({ list, state, mutate, onClose }) {
 function Picker({ list, state, mutate, onClose }) {
   const [q, setQ] = useState('');
   const [newCat, setNewCat] = useState('overig');
+  const cats = state.cats || CATS;
   const inList = new Set(list.items.map((i) => i.gearId));
 
   const filtered = state.gear.filter((g) => g.name.toLowerCase().includes(q.toLowerCase()));
-  const grouped = groupByCat(filtered);
+  const grouped = groupByCat(filtered, cats);
   const canCreate = q.trim() && !state.gear.some((g) => g.name.toLowerCase() === q.trim().toLowerCase());
 
   function toggle(gearId) {
@@ -622,7 +644,7 @@ function Picker({ list, state, mutate, onClose }) {
               Nieuw: <b>{q.trim()}</b>
             </div>
             <select className="input" style={{ width: 'auto', padding: '6px 8px' }} value={newCat} onChange={(e) => setNewCat(e.target.value)}>
-              {CATS.map((c) => (
+              {cats.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.emoji} {c.name}
                 </option>
@@ -670,6 +692,8 @@ function BakView({ state, mutate }) {
   const [name, setName] = useState('');
   const [cat, setCat] = useState('overig');
   const [editId, setEditId] = useState(null);
+  const [addingCat, setAddingCat] = useState(false);
+  const cats = state.cats || CATS;
 
   const usage = useMemo(() => {
     const map = {};
@@ -678,7 +702,7 @@ function BakView({ state, mutate }) {
   }, [state.lists]);
 
   const filtered = state.gear.filter((g) => g.name.toLowerCase().includes(q.toLowerCase()));
-  const grouped = groupByCat(filtered);
+  const grouped = groupByCat(filtered, cats);
   const editItem = state.gear.find((g) => g.id === editId);
 
   function addItem() {
@@ -704,7 +728,7 @@ function BakView({ state, mutate }) {
         <div className="row">
           <input className="input grow" placeholder="Nieuw item…" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addItem()} />
           <select className="input" style={{ width: 'auto', padding: '10px 8px' }} value={cat} onChange={(e) => setCat(e.target.value)}>
-            {CATS.map((c) => (
+            {cats.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.emoji} {c.name}
               </option>
@@ -750,9 +774,14 @@ function BakView({ state, mutate }) {
         </div>
       ))}
 
+      <button className="btn ghost" onClick={() => setAddingCat(true)}>
+        + Nieuwe categorie
+      </button>
+
       {editItem && (
         <GearForm
           item={editItem}
+          cats={cats}
           onClose={() => setEditId(null)}
           onSave={(nm, c) => {
             mutate((s) => {
@@ -765,11 +794,24 @@ function BakView({ state, mutate }) {
           }}
         />
       )}
+      {addingCat && (
+        <CatForm
+          cats={cats}
+          onClose={() => setAddingCat(false)}
+          onSave={(nm, emoji) => {
+            mutate((s) => {
+              s.cats.push({ id: uid(), name: nm, emoji });
+              return s;
+            });
+            setAddingCat(false);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function GearForm({ item, onSave, onClose }) {
+function GearForm({ item, cats, onSave, onClose }) {
   const [name, setName] = useState(item.name);
   const [cat, setCat] = useState(item.cat);
   return (
@@ -777,7 +819,7 @@ function GearForm({ item, onSave, onClose }) {
       <input className="input" value={name} autoFocus onChange={(e) => setName(e.target.value)} />
       <div style={{ height: 10 }} />
       <select className="input" value={cat} onChange={(e) => setCat(e.target.value)}>
-        {CATS.map((c) => (
+        {cats.map((c) => (
           <option key={c.id} value={c.id}>
             {c.emoji} {c.name}
           </option>
@@ -786,6 +828,43 @@ function GearForm({ item, onSave, onClose }) {
       <div style={{ height: 14 }} />
       <button className="btn" style={{ width: '100%' }} disabled={!name.trim()} onClick={() => onSave(name.trim(), cat)}>
         Opslaan
+      </button>
+    </Sheet>
+  );
+}
+
+const CAT_EMOJIS = ['🎲', '🎮', '📚', '🎵', '⚽', '🚴', '🎣', '🧗', '🐕', '👶', '🍳', '🛠️', '💼', '🩴'];
+
+function CatForm({ cats, onSave, onClose }) {
+  const [name, setName] = useState('');
+  const [emoji, setEmoji] = useState(CAT_EMOJIS[0]);
+  const exists = cats.some((c) => c.name.toLowerCase() === name.trim().toLowerCase());
+  return (
+    <Sheet title="Nieuwe categorie" onClose={onClose}>
+      <input
+        className="input"
+        placeholder="Bijv. Hond, Baby, Vissen…"
+        value={name}
+        autoFocus
+        onChange={(e) => setName(e.target.value)}
+      />
+      {exists && <p className="muted">Deze categorie bestaat al.</p>}
+      <div style={{ height: 12 }} />
+      <div className="emojirow">
+        {CAT_EMOJIS.map((e) => (
+          <button key={e} className={e === emoji ? 'on' : ''} onClick={() => setEmoji(e)}>
+            {e}
+          </button>
+        ))}
+      </div>
+      <div style={{ height: 16 }} />
+      <button
+        className="btn"
+        style={{ width: '100%' }}
+        disabled={!name.trim() || exists}
+        onClick={() => onSave(name.trim(), emoji)}
+      >
+        Toevoegen
       </button>
     </Sheet>
   );
@@ -819,6 +898,7 @@ function OthersView({ myEmail, mutate, onCopied }) {
 
   function copyList(theirState, theirList) {
     mutate((s) => {
+      const myCatIds = new Set((s.cats || CATS).map((c) => c.id));
       const myGearByName = new Map(s.gear.map((g) => [g.name.toLowerCase(), g]));
       const theirGearById = Object.fromEntries(theirState.gear.map((g) => [g.id, g]));
       const items = [];
@@ -827,7 +907,7 @@ function OthersView({ myEmail, mutate, onCopied }) {
         if (!theirGear) continue;
         let mine = myGearByName.get(theirGear.name.toLowerCase());
         if (!mine) {
-          mine = { id: uid(), name: theirGear.name, cat: theirGear.cat || 'overig' };
+          mine = { id: uid(), name: theirGear.name, cat: myCatIds.has(theirGear.cat) ? theirGear.cat : 'overig' };
           s.gear.push(mine);
           myGearByName.set(mine.name.toLowerCase(), mine);
         }

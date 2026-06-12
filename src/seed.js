@@ -11,6 +11,7 @@ export const CATS = [
   { id: 'strand', emoji: '🏖️', name: 'Strand & zwemmen' },
   { id: 'kamperen', emoji: '🏕️', name: 'Kamperen' },
   { id: 'winter', emoji: '⛷️', name: 'Wintersport' },
+  { id: 'vermaak', emoji: '🎲', name: 'Vermaak' },
   { id: 'overig', emoji: '🧺', name: 'Overig' },
 ];
 
@@ -77,8 +78,6 @@ export function seedGear() {
     G('Zonnebril', 'onderweg'),
     G('Nekkussen', 'onderweg'),
     G('Snacks voor onderweg', 'onderweg'),
-    G('Boek / tijdschrift', 'onderweg'),
-    G('Spelletjes / kaarten', 'onderweg'),
     // Strand & zwemmen
     G('Strandlaken', 'strand'),
     G('Snorkelset', 'strand'),
@@ -117,6 +116,11 @@ export function seedGear() {
     G('Helm', 'winter'),
     G('Sjaal / col', 'winter'),
     G('Après-ski schoenen', 'winter'),
+    // Vermaak
+    G('Spelletjes / kaarten', 'vermaak'),
+    G('Boek / tijdschrift', 'vermaak'),
+    G('Gameconsole / Switch', 'vermaak'),
+    G('Bal / strandspellen', 'vermaak'),
     // Overig
     G('Handdoeken', 'overig'),
     G('Wasmiddel / waslijn', 'overig'),
@@ -152,6 +156,7 @@ export function seedState(email) {
   return {
     v: 1,
     email,
+    cats: CATS,
     gear,
     lists: [
       {
