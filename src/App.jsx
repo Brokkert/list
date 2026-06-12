@@ -43,11 +43,17 @@ function groupByCat(gear, cats) {
 
 function listProgress(list) {
   const all = [...list.items, ...(list.extras || [])];
-  const total = all.length;
-  const packed = all.filter((i) => i.packed).length;
   const skipped = all.filter((i) => !i.packed && i.skip).length;
-  const done = packed + skipped;
-  return { total, packed, skipped, done, pct: total ? Math.round((done / total) * 100) : 0 };
+  const packed = all.filter((i) => i.packed).length;
+  const toPack = all.length - skipped; // "niet mee" hoeft niet ingepakt
+  return {
+    total: all.length,
+    toPack,
+    packed,
+    skipped,
+    done: all.length > 0 && packed === toPack,
+    pct: toPack ? Math.round((packed / toPack) * 100) : all.length ? 100 : 0,
+  };
 }
 
 function useSyncStatus() {
@@ -318,12 +324,12 @@ function ListsView({ state, mutate, onOpen }) {
               <div className="grow">
                 <div className="title">{list.name}</div>
                 <div className="muted">
-                  {p.done}/{p.total} ingepakt{p.skipped ? ` (${p.skipped} niet mee)` : ''}{list.note ? ` · ${list.note}` : ''}
+                  {p.packed}/{p.toPack} ingepakt{p.skipped ? ` · ${p.skipped} niet mee` : ''}{list.note ? ` · ${list.note}` : ''}
                 </div>
               </div>
-              {p.total > 0 && p.done === p.total && <span className="badge">klaar ✓</span>}
+              {p.done && <span className="badge">klaar ✓</span>}
             </div>
-            <div className={`progress${p.total && p.done === p.total ? ' done' : ''}`}>
+            <div className={`progress${p.done ? ' done' : ''}`}>
               <div style={{ width: `${p.pct}%` }} />
             </div>
           </div>
@@ -423,7 +429,7 @@ function ListDetail({ list, state, mutate, onClose }) {
         <div className="row">
           <div className="grow">
             <b>
-              {p.done}/{p.total}
+              {p.packed}/{p.toPack}
             </b>{' '}
             <span className="muted">ingepakt{p.skipped ? ` · ${p.skipped} niet mee` : ''}</span>
           </div>
@@ -431,7 +437,7 @@ function ListDetail({ list, state, mutate, onClose }) {
             {editMode ? '✓ klaar' : '✏️ bewerk'}
           </button>
         </div>
-        <div className={`progress${p.total && p.done === p.total ? ' done' : ''}`}>
+        <div className={`progress${p.done ? ' done' : ''}`}>
           <div style={{ width: `${p.pct}%` }} />
         </div>
       </div>
