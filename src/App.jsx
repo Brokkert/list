@@ -381,6 +381,7 @@ function ListForm({ initial, onSave, onClose }) {
 function ListDetail({ list, state, mutate, onClose }) {
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const p = listProgress(list);
 
   const cats = state.cats || CATS;
@@ -426,14 +427,69 @@ function ListDetail({ list, state, mutate, onClose }) {
             </b>{' '}
             <span className="muted">ingepakt{p.skipped ? ` · ${p.skipped} niet mee` : ''}</span>
           </div>
-          <button className="btn small secondary" onClick={() => setEditing(true)}>
-            ✏️ bewerk
+          <button className={`btn small ${editMode ? '' : 'secondary'}`} onClick={() => setEditMode(!editMode)}>
+            {editMode ? '✓ klaar' : '✏️ bewerk'}
           </button>
         </div>
         <div className={`progress${p.total && p.done === p.total ? ' done' : ''}`}>
           <div style={{ width: `${p.pct}%` }} />
         </div>
       </div>
+
+      {editMode && (
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <button className="btn small secondary grow" onClick={() => setEditing(true)}>
+            ✏️ Naam & emoji
+          </button>
+          <button
+            className="btn small secondary grow"
+            onClick={() =>
+              mutate((s) => {
+                const l = s.lists.find((x) => x.id === list.id);
+                for (const it of [...l.items, ...(l.extras || [])]) {
+                  it.packed = false;
+                  it.skip = false;
+                }
+                return s;
+              })
+            }
+          >
+            ↺ Vinkjes resetten
+          </button>
+          <button
+            className="btn small secondary grow"
+            onClick={() =>
+              mutate((s) => {
+                const copy = structuredClone(s.lists.find((x) => x.id === list.id));
+                copy.id = uid();
+                copy.name = `${copy.name} (kopie)`;
+                copy.items.forEach((it) => {
+                  it.packed = false;
+                  it.skip = false;
+                });
+                copy.extras = (copy.extras || []).map((it) => ({ ...it, id: uid(), packed: false, skip: false }));
+                s.lists.push(copy);
+                return s;
+              })
+            }
+          >
+            ⧉ Dupliceren
+          </button>
+          <button
+            className="btn small danger grow"
+            onClick={() => {
+              if (!confirm(`Lijstje "${list.name}" verwijderen?`)) return;
+              mutate((s) => {
+                s.lists = s.lists.filter((x) => x.id !== list.id);
+                return s;
+              });
+              onClose();
+            }}
+          >
+            🗑 Verwijder lijstje
+          </button>
+        </div>
+      )}
 
       {list.items.length === 0 && (list.extras || []).length === 0 && (
         <div className="empty">
@@ -472,31 +528,34 @@ function ListDetail({ list, state, mutate, onClose }) {
                     <button onClick={() => patchItem(it.gearId, (x) => (x.qty += 1))}>+</button>
                   </span>
                 )}
-                <button
-                  className={`iconbtn${it.skip ? ' active' : ''}`}
-                  title="Dit keer niet mee"
-                  onClick={() =>
-                    patchItem(it.gearId, (x) => {
-                      x.skip = !x.skip;
-                      if (x.skip) x.packed = false;
-                    })
-                  }
-                >
-                  ⊘
-                </button>
-                <button
-                  className="iconbtn"
-                  title="Uit lijstje halen"
-                  onClick={() =>
-                    mutate((s) => {
-                      const l = s.lists.find((x) => x.id === list.id);
-                      l.items = l.items.filter((x) => x.gearId !== it.gearId);
-                      return s;
-                    })
-                  }
-                >
-                  ✕
-                </button>
+                {editMode ? (
+                  <button
+                    className="iconbtn"
+                    title="Uit lijstje halen"
+                    onClick={() =>
+                      mutate((s) => {
+                        const l = s.lists.find((x) => x.id === list.id);
+                        l.items = l.items.filter((x) => x.gearId !== it.gearId);
+                        return s;
+                      })
+                    }
+                  >
+                    ✕
+                  </button>
+                ) : (
+                  <button
+                    className={`iconbtn${it.skip ? ' active' : ''}`}
+                    title="Dit keer niet mee"
+                    onClick={() =>
+                      patchItem(it.gearId, (x) => {
+                        x.skip = !x.skip;
+                        if (x.skip) x.packed = false;
+                      })
+                    }
+                  >
+                    ⊘
+                  </button>
+                )}
               </div>
             );
           })}
@@ -520,40 +579,26 @@ function ListDetail({ list, state, mutate, onClose }) {
                 {it.packed ? '✓' : ''}
               </button>
               <span className="name">{it.name}</span>
-              {it.skip ? (
-                <span className="badge off">niet mee</span>
-              ) : (
-                <span className="qty">
-                  <button onClick={() => patchExtra(it.id, (x) => (x.qty = Math.max(1, x.qty - 1)))}>−</button>
-                  <span>{it.qty}</span>
-                  <button onClick={() => patchExtra(it.id, (x) => (x.qty += 1))}>+</button>
-                </span>
+              <span className="qty">
+                <button onClick={() => patchExtra(it.id, (x) => (x.qty = Math.max(1, x.qty - 1)))}>−</button>
+                <span>{it.qty}</span>
+                <button onClick={() => patchExtra(it.id, (x) => (x.qty += 1))}>+</button>
+              </span>
+              {editMode && (
+                <button
+                  className="iconbtn"
+                  title="Uit lijstje halen"
+                  onClick={() =>
+                    mutate((s) => {
+                      const l = s.lists.find((x) => x.id === list.id);
+                      l.extras = (l.extras || []).filter((x) => x.id !== it.id);
+                      return s;
+                    })
+                  }
+                >
+                  ✕
+                </button>
               )}
-              <button
-                className={`iconbtn${it.skip ? ' active' : ''}`}
-                title="Dit keer niet mee"
-                onClick={() =>
-                  patchExtra(it.id, (x) => {
-                    x.skip = !x.skip;
-                    if (x.skip) x.packed = false;
-                  })
-                }
-              >
-                ⊘
-              </button>
-              <button
-                className="iconbtn"
-                title="Uit lijstje halen"
-                onClick={() =>
-                  mutate((s) => {
-                    const l = s.lists.find((x) => x.id === list.id);
-                    l.extras = (l.extras || []).filter((x) => x.id !== it.id);
-                    return s;
-                  })
-                }
-              >
-                ✕
-              </button>
             </div>
           ))}
         </div>
@@ -562,56 +607,6 @@ function ListDetail({ list, state, mutate, onClose }) {
       <button className="btn" onClick={() => setPicking(true)}>
         + Spullen toevoegen
       </button>
-
-      <div className="row" style={{ marginTop: 4 }}>
-        <button
-          className="btn small secondary grow"
-          onClick={() =>
-            mutate((s) => {
-              const l = s.lists.find((x) => x.id === list.id);
-              for (const it of [...l.items, ...(l.extras || [])]) {
-                it.packed = false;
-                it.skip = false;
-              }
-              return s;
-            })
-          }
-        >
-          ↺ Vinkjes resetten
-        </button>
-        <button
-          className="btn small secondary grow"
-          onClick={() =>
-            mutate((s) => {
-              const copy = structuredClone(s.lists.find((x) => x.id === list.id));
-              copy.id = uid();
-              copy.name = `${copy.name} (kopie)`;
-              copy.items.forEach((it) => {
-                it.packed = false;
-                it.skip = false;
-              });
-              copy.extras = (copy.extras || []).map((it) => ({ ...it, id: uid(), packed: false, skip: false }));
-              s.lists.push(copy);
-              return s;
-            })
-          }
-        >
-          ⧉ Dupliceren
-        </button>
-        <button
-          className="btn small danger grow"
-          onClick={() => {
-            if (!confirm(`Lijstje "${list.name}" verwijderen?`)) return;
-            mutate((s) => {
-              s.lists = s.lists.filter((x) => x.id !== list.id);
-              return s;
-            });
-            onClose();
-          }}
-        >
-          🗑 Verwijder
-        </button>
-      </div>
 
       {picking && <Picker list={list} state={state} mutate={mutate} onClose={() => setPicking(false)} />}
       {editing && (
