@@ -636,6 +636,9 @@ function Picker({ list, state, mutate, onClose }) {
         value={q}
         autoFocus
         onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && canCreate) createAndAdd();
+        }}
       />
       {canCreate && (
         <div className="card" style={{ marginTop: 10 }}>
@@ -678,9 +681,26 @@ function Picker({ list, state, mutate, onClose }) {
         </div>
       ))}
       <div style={{ height: 12 }} />
-      <button className="btn" style={{ width: '100%' }} onClick={onClose}>
-        Klaar ({list.items.length + (list.extras || []).length} items)
-      </button>
+      {canCreate ? (
+        <div className="row">
+          <button
+            className="btn grow"
+            onClick={() => {
+              createAndAdd();
+              onClose();
+            }}
+          >
+            📦 “{q.trim()}” toevoegen & klaar
+          </button>
+          <button className="btn small secondary" onClick={onClose}>
+            Sluiten
+          </button>
+        </div>
+      ) : (
+        <button className="btn" style={{ width: '100%' }} onClick={onClose}>
+          Klaar ({list.items.length + (list.extras || []).length} items)
+        </button>
+      )}
     </Sheet>
   );
 }
