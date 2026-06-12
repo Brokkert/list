@@ -11,11 +11,11 @@ Mobile-first web-app voor vakantie-paklijstjes: één **Bak** met al je spullen,
 - **Login met alleen e-mail** — geen wachtwoord; elk e-mailadres is een eigen profiel met eigen Bak + lijstjes.
 - **Persistent + realtime** — data staat in Supabase, met localStorage als cache/offline-fallback en realtime sync tussen apparaten.
 
-## Database (geen setup nodig)
+## Database
 
-De app hergebruikt het bestaande gratis Supabase-project van [CATANIA](https://github.com/Brokkert/catan): de key-value tabel `catan_shared` (anon read/write + realtime), met key-prefix `paklijst:v1:<email-slug>`. Er hoeft dus niets aangemaakt of beheerd te worden.
+Eigen gratis Supabase-project met één key-value tabel `paklijst_shared` (anon read/write + realtime), key per profiel: `paklijst:v1:<email-slug>`. Eenmalige setup staat in [SUPABASE_SETUP.md](SUPABASE_SETUP.md); de keepalive-workflow houdt het gratis project wakker zodat het niet auto-pauzeert.
 
-> ⚠️ Beveiligingsniveau is "hobby-app", net als CATANIA: er is geen echte authenticatie en iedereen met de anon key kan alle profielen lezen/schrijven. Zet er niks geheims in.
+> ⚠️ Beveiligingsniveau is "hobby-app": er is geen echte authenticatie en iedereen met de anon key kan alle profielen lezen/schrijven. Zet er niks geheims in.
 
 ## Ontwikkelen
 

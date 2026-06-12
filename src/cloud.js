@@ -1,12 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Hergebruikt het bestaande Supabase-project van CATANIA (Brokkert/catan).
-// De tabel catan_shared is een generieke key-value store (id text pk, state text,
-// updated_at) met anon read/write + realtime — paklijst-data leeft daar onder
-// een eigen key-prefix, dus geen extra setup nodig.
-const SUPABASE_URL = 'https://ogqytxojtnddzsjidyjf.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_bo2NeFurx39ErHGee1gfLw_xyYc81yi';
-const TABLE = 'catan_shared';
+// Eigen Supabase-project voor de paklijst-app (zie SUPABASE_SETUP.md).
+// paklijst_shared is een key-value store (id text pk, state text, updated_at)
+// met anon read/write + realtime; elke rij is één profiel.
+const SUPABASE_URL = 'https://anglxcniiktoenoqapqz.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_qyGsqcHIofui-1rI0WZadQ_cb91iv26';
+const TABLE = 'paklijst_shared';
 const PREFIX = 'paklijst:v1:';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
