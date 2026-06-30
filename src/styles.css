@@ -189,6 +189,46 @@ input, select { font-family: inherit; font-size: 16px; }
   font-weight: 500;
 }
 
+.prep-banner {
+  background: #fff9e6;
+  border-color: #f0d68a;
+}
+.prep-banner-title { font-size: 15px; font-weight: 700; color: #8a5a00; }
+.prep-count { opacity: 0.7; font-weight: 500; }
+.prep-banner-sub { font-size: 12px; margin-top: 2px; margin-bottom: 6px; }
+.prep-group { margin-top: 8px; }
+.prep-group-head {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a5a00;
+  margin-bottom: 4px;
+}
+.prep-banner-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+  border-top: 1px solid #f0d68a55;
+  cursor: pointer;
+}
+.prep-banner-row:first-child { border-top: none; }
+.prep-banner-row .name { flex: 1; }
+
+.cat-edit {
+  background: none;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.6;
+  padding: 2px 6px;
+  margin-left: 6px;
+}
+.cat-edit:hover { opacity: 1; }
+.catsec h3 { display: flex; align-items: center; }
+.catsec h3 .grow-empty { flex: 1; }
+
 .tabbar button { position: relative; }
 .tabdot {
   position: absolute;

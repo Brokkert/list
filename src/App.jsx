@@ -464,6 +464,27 @@ function ListDetail({ list, state, mutate, onClose }) {
     return groups;
   }, [list.items, gearById, cats]);
 
+  const openPrep = useMemo(() => {
+    const out = [];
+    for (const it of list.items) {
+      if (it.prep && !it.prep.done && !it.packed && !it.skip) {
+        out.push({ kind: 'item', id: it.gearId, name: gearById[it.gearId]?.name || '(verwijderd)', qty: it.qty, prep: it.prep });
+      }
+    }
+    for (const it of list.extras || []) {
+      if (it.prep && !it.prep.done && !it.packed && !it.skip) {
+        out.push({ kind: 'extra', id: it.id, name: it.name, qty: it.qty, prep: it.prep });
+      }
+    }
+    return out;
+  }, [list.items, list.extras, gearById]);
+
+  const openPrepGrouped = useMemo(() => {
+    const g = {};
+    for (const o of openPrep) (g[o.prep.label] ||= []).push(o);
+    return g;
+  }, [openPrep]);
+
   function patchItem(gearId, fn) {
     mutate((s) => {
       const l = s.lists.find((x) => x.id === list.id);
@@ -514,6 +535,34 @@ function ListDetail({ list, state, mutate, onClose }) {
           <div style={{ width: `${p.pct}%` }} />
         </div>
       </div>
+
+      {openPrep.length > 0 && !editMode && (
+        <div className="card prep-banner">
+          <div className="prep-banner-title">📝 Eerst nog regelen <span className="prep-count">({openPrep.length})</span></div>
+          <div className="muted prep-banner-sub">Doe dit vóór je gaat inpakken.</div>
+          {Object.entries(openPrepGrouped).map(([label, items]) => (
+            <div key={label} className="prep-group">
+              <div className="prep-group-head">{prepEmoji(label)} {label}</div>
+              {items.map((o) => (
+                <div
+                  key={`${o.kind}-${o.id}`}
+                  className="prep-banner-row"
+                  onClick={() => {
+                    if (o.kind === 'item') patchItem(o.id, (x) => (x.prep.done = true));
+                    else patchExtra(o.id, (x) => (x.prep.done = true));
+                  }}
+                >
+                  <button className="check" />
+                  <span className="name">
+                    {o.name}
+                    {o.qty > 1 ? ` ×${o.qty}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
 
       {editMode && (
         <div className="row" style={{ flexWrap: 'wrap' }}>
@@ -859,6 +908,7 @@ function BakView({ state, mutate }) {
   const [cat, setCat] = useState('overig');
   const [editId, setEditId] = useState(null);
   const [addingCat, setAddingCat] = useState(false);
+  const [editingCat, setEditingCat] = useState(null);
   const cats = state.cats || CATS;
 
   const usage = useMemo(() => {
@@ -911,7 +961,10 @@ function BakView({ state, mutate }) {
       {grouped.map(({ cat, items }) => (
         <div key={cat.id} className="catsec">
           <h3>
-            {cat.emoji} {cat.name}
+            <span className="grow-empty">{cat.emoji} {cat.name}</span>
+            <button className="cat-edit" title="Categorie bewerken" onClick={() => setEditingCat(cat)}>
+              ✏️
+            </button>
           </h3>
           {items.map((g) => (
             <div key={g.id} className="itemrow">
@@ -966,11 +1019,46 @@ function BakView({ state, mutate }) {
           onClose={() => setAddingCat(false)}
           onSave={(nm, emoji) => {
             mutate((s) => {
+              if (!s.cats) s.cats = [];
               s.cats.push({ id: uid(), name: nm, emoji });
               return s;
             });
             setAddingCat(false);
           }}
+        />
+      )}
+      {editingCat && (
+        <CatForm
+          cats={cats}
+          current={editingCat}
+          onClose={() => setEditingCat(null)}
+          onSave={(nm, emoji) => {
+            mutate((s) => {
+              const c = (s.cats || []).find((x) => x.id === editingCat.id);
+              if (c) {
+                c.name = nm;
+                c.emoji = emoji;
+              }
+              return s;
+            });
+            setEditingCat(null);
+          }}
+          onDelete={
+            cats.length > 1
+              ? () => {
+                  mutate((s) => {
+                    s.cats = (s.cats || []).filter((c) => c.id !== editingCat.id);
+                    const hasOverig = s.cats.some((c) => c.id === 'overig');
+                    const fallback = hasOverig ? 'overig' : s.cats[0]?.id;
+                    for (const g of s.gear) {
+                      if (g.cat === editingCat.id) g.cat = fallback;
+                    }
+                    return s;
+                  });
+                  setEditingCat(null);
+                }
+              : null
+          }
         />
       )}
     </div>
@@ -999,14 +1087,21 @@ function GearForm({ item, cats, onSave, onClose }) {
   );
 }
 
-const CAT_EMOJIS = ['🎲', '🎮', '📚', '🎵', '⚽', '🚴', '🎣', '🧗', '🐕', '👶', '🍳', '🛠️', '💼', '🩴'];
+const CAT_EMOJIS = [
+  '👕', '🧴', '💊', '📄', '🔌', '🎒', '🏖️', '🏕️', '⛷️', '🎲',
+  '🧺', '🎮', '📚', '🎵', '⚽', '🚴', '🎣', '🧗', '🐕', '👶',
+  '🍳', '🛠️', '💼', '🩴', '🛍️', '🧳', '📷', '🪥', '🍼', '🏐',
+  '🎿', '🛹', '🤿', '🎤', '🎨', '🌧️',
+];
 
-function CatForm({ cats, onSave, onClose }) {
-  const [name, setName] = useState('');
-  const [emoji, setEmoji] = useState(CAT_EMOJIS[0]);
-  const exists = cats.some((c) => c.name.toLowerCase() === name.trim().toLowerCase());
+function CatForm({ cats, current, onSave, onDelete, onClose }) {
+  const [name, setName] = useState(current?.name || '');
+  const [emoji, setEmoji] = useState(current?.emoji || CAT_EMOJIS[0]);
+  const exists = cats.some(
+    (c) => c.id !== current?.id && c.name.toLowerCase() === name.trim().toLowerCase()
+  );
   return (
-    <Sheet title="Nieuwe categorie" onClose={onClose}>
+    <Sheet title={current ? 'Categorie bewerken' : 'Nieuwe categorie'} onClose={onClose}>
       <input
         className="input"
         placeholder="Bijv. Hond, Baby, Vissen…"
@@ -1014,7 +1109,7 @@ function CatForm({ cats, onSave, onClose }) {
         autoFocus
         onChange={(e) => setName(e.target.value)}
       />
-      {exists && <p className="muted">Deze categorie bestaat al.</p>}
+      {exists && <p className="muted">Deze naam is al in gebruik.</p>}
       <div style={{ height: 12 }} />
       <div className="emojirow">
         {CAT_EMOJIS.map((e) => (
@@ -1024,14 +1119,25 @@ function CatForm({ cats, onSave, onClose }) {
         ))}
       </div>
       <div style={{ height: 16 }} />
-      <button
-        className="btn"
-        style={{ width: '100%' }}
-        disabled={!name.trim() || exists}
-        onClick={() => onSave(name.trim(), emoji)}
-      >
-        Toevoegen
-      </button>
+      <div className="row">
+        <button
+          className="btn grow"
+          disabled={!name.trim() || exists}
+          onClick={() => onSave(name.trim(), emoji)}
+        >
+          {current ? 'Opslaan' : 'Toevoegen'}
+        </button>
+        {current && onDelete && (
+          <button
+            className="btn small danger"
+            onClick={() => {
+              if (confirm(`"${current.name}" verwijderen? Spullen in deze categorie gaan naar Overig.`)) onDelete();
+            }}
+          >
+            🗑
+          </button>
+        )}
+      </div>
     </Sheet>
   );
 }
