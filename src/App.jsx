@@ -10,6 +10,7 @@ import {
   getLastError,
 } from './cloud.js';
 import { CATS, uid, seedState } from './seed.js';
+import { fetchWeather, weatherIcon } from './weather.js';
 
 const LS_LAST = 'paklijst:lastEmail';
 const cacheKey = (slug) => `paklijst:cache:${slug}`;
@@ -43,12 +44,26 @@ function migrate(s) {
     if (l.departure == null) l.departure = '';
     if (l.returnDate == null) l.returnDate = '';
     if (l.people == null) l.people = 1;
+    if (l.color == null) l.color = '';
     for (const it of l.items || []) if (it.note == null) it.note = '';
     for (const it of l.extras || []) if (it.note == null) it.note = '';
   }
   if (!Array.isArray(s.templates)) s.templates = [];
   return s;
 }
+
+const LIST_COLORS = [
+  { id: '', label: 'Standaard', value: '' },
+  { id: 'red', label: 'Rood', value: '#d24a4a' },
+  { id: 'orange', label: 'Oranje', value: '#e89c4a' },
+  { id: 'yellow', label: 'Geel', value: '#d4ad2e' },
+  { id: 'green', label: 'Groen', value: '#0e7a5f' },
+  { id: 'teal', label: 'Teal', value: '#2bb9a8' },
+  { id: 'blue', label: 'Blauw', value: '#4a9cf2' },
+  { id: 'purple', label: 'Paars', value: '#7a4ad2' },
+  { id: 'pink', label: 'Roze', value: '#d24aa3' },
+];
+const colorValue = (id) => LIST_COLORS.find((c) => c.id === id)?.value || '';
 
 function templateFromList(list) {
   return {
@@ -213,11 +228,22 @@ function useTheme() {
   return [theme, cycle];
 }
 
+function parseShareHash() {
+  const m = window.location.hash.match(/^#share=([^:]+):(.+)$/);
+  return m ? { slug: m[1], listId: m[2] } : null;
+}
+
 export default function App() {
   const [email, setEmail] = useState(() => localStorage.getItem(LS_LAST) || null);
   const [state, setState] = useState(null);
   const [loading, setLoading] = useState(false);
   const [theme, cycleTheme] = useTheme();
+  const [share, setShare] = useState(() => parseShareHash());
+  useEffect(() => {
+    const onHash = () => setShare(parseShareHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -301,6 +327,20 @@ export default function App() {
     setState(null);
   }
 
+  if (share) {
+    return (
+      <ShareView
+        share={share}
+        myEmail={email}
+        myState={state}
+        mutate={mutate}
+        onClose={() => {
+          history.replaceState(null, '', window.location.pathname + window.location.search);
+          setShare(null);
+        }}
+      />
+    );
+  }
   if (!email) return <Login onLogin={login} />;
   if (!state) {
     return (
@@ -377,10 +417,11 @@ function Main({ email, state, mutate, onLogout, theme, cycleTheme }) {
 
   const openList = state.lists.find((l) => l.id === openListId);
   const prepCount = useMemo(() => collectOpenPrep(state).length, [state.lists, state.gear]);
+  const headerBg = openList ? colorValue(openList.color) : '';
 
   return (
     <div className="app">
-      <header className="header">
+      <header className="header" style={headerBg ? { background: headerBg } : undefined}>
         <h1>
           {openList ? (
             <>
@@ -424,7 +465,7 @@ function Main({ email, state, mutate, onLogout, theme, cycleTheme }) {
       </header>
 
       {openList ? (
-        <ListDetail list={openList} state={state} mutate={mutate} onClose={() => setOpenListId(null)} />
+        <ListDetail list={openList} state={state} mutate={mutate} onClose={() => setOpenListId(null)} myEmail={email} />
       ) : tab === 'lijsten' ? (
         <ListsView state={state} mutate={mutate} onOpen={setOpenListId} />
       ) : tab === 'vooraf' ? (
@@ -482,8 +523,14 @@ function ListsView({ state, mutate, onOpen }) {
         if (range) metaBits.push(`🗓️ ${range}`);
         if ((list.people || 1) > 1) metaBits.push(`👥 ${list.people}`);
         if (days) metaBits.push(`${days}d`);
+        const cval = colorValue(list.color);
         return (
-          <div key={list.id} className="card tap" onClick={() => onOpen(list.id)}>
+          <div
+            key={list.id}
+            className="card tap listcard"
+            onClick={() => onOpen(list.id)}
+            style={cval ? { borderLeft: `4px solid ${cval}` } : undefined}
+          >
             <div className="row">
               <span style={{ fontSize: 26 }}>{list.emoji}</span>
               <div className="grow">
@@ -575,6 +622,7 @@ function ListForm({ initial, onSave, onClose }) {
   const [departure, setDeparture] = useState(initial?.departure || '');
   const [returnDate, setReturnDate] = useState(initial?.returnDate || '');
   const [people, setPeople] = useState(initial?.people || 1);
+  const [color, setColor] = useState(initial?.color || '');
 
   const days = tripDays(departure, returnDate);
 
@@ -646,6 +694,22 @@ function ListForm({ initial, onSave, onClose }) {
           </button>
         </div>
       </div>
+      <div className="formsection">
+        <label className="formlabel">🎨 Kleurtje</label>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+          {LIST_COLORS.map((c) => (
+            <button
+              key={c.id}
+              className={`colorchip${color === c.id ? ' on' : ''}`}
+              style={c.value ? { background: c.value } : undefined}
+              onClick={() => setColor(c.id)}
+              title={c.label}
+            >
+              {!c.value && '∅'}
+            </button>
+          ))}
+        </div>
+      </div>
       <div style={{ height: 16 }} />
       <button
         className="btn"
@@ -659,6 +723,7 @@ function ListForm({ initial, onSave, onClose }) {
             departure,
             returnDate,
             people,
+            color,
           })
         }
       >
@@ -670,7 +735,7 @@ function ListForm({ initial, onSave, onClose }) {
 
 /* ================= Lijst detail ================= */
 
-function ListDetail({ list, state, mutate, onClose }) {
+function ListDetail({ list, state, mutate, onClose, myEmail }) {
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -752,6 +817,23 @@ function ListDetail({ list, state, mutate, onClose }) {
     else patchExtra(target.id, apply);
   }
 
+  function moveItemInCat(gearId, dir) {
+    mutate((s) => {
+      const l = s.lists.find((x) => x.id === list.id);
+      const myCat = gearById[gearId]?.cat;
+      const sameCatIndices = l.items
+        .map((it, i) => (gearById[it.gearId]?.cat === myCat ? i : -1))
+        .filter((i) => i >= 0);
+      const myPosInCat = sameCatIndices.findIndex((i) => l.items[i].gearId === gearId);
+      const targetPosInCat = myPosInCat + dir;
+      if (targetPosInCat < 0 || targetPosInCat >= sameCatIndices.length) return s;
+      const a = sameCatIndices[myPosInCat];
+      const b = sameCatIndices[targetPosInCat];
+      [l.items[a], l.items[b]] = [l.items[b], l.items[a]];
+      return s;
+    });
+  }
+
   function removeFromList(target) {
     mutate((s) => {
       const l = s.lists.find((x) => x.id === list.id);
@@ -794,6 +876,8 @@ function ListDetail({ list, state, mutate, onClose }) {
           <div style={{ width: `${p.pct}%` }} />
         </div>
       </div>
+
+      <WeatherInfo destination={list.destination} departure={list.departure} returnDate={list.returnDate} />
 
       {openPrep.length > 0 && !editMode && (
         <div className="card prep-banner">
@@ -848,6 +932,20 @@ function ListDetail({ list, state, mutate, onClose }) {
             }}
           >
             📋 Bewaar als template
+          </button>
+          <button
+            className="btn small secondary grow"
+            onClick={async () => {
+              const url = `${window.location.origin}${window.location.pathname}#share=${slugify(myEmail)}:${list.id}`;
+              try {
+                await navigator.clipboard.writeText(url);
+                alert(`Deel-link gekopieerd!\n\n${url}\n\nIedereen met deze link kan dit lijstje lezen.`);
+              } catch {
+                prompt('Deel-link:', url);
+              }
+            }}
+          >
+            🔗 Deel-link kopiëren
           </button>
           <button
             className="btn small secondary grow"
@@ -946,13 +1044,29 @@ function ListDetail({ list, state, mutate, onClose }) {
                   </span>
                 )}
                 {editMode ? (
-                  <button
-                    className="iconbtn"
-                    title="Bewerken (vooraf, notitie, weghalen)"
-                    onClick={() => setItemEditing({ kind: 'item', id: it.gearId, item: it, name: gear?.name || '(verwijderd)' })}
-                  >
-                    ✏️
-                  </button>
+                  <>
+                    <button
+                      className="iconbtn small"
+                      title="Omhoog (binnen categorie)"
+                      onClick={() => moveItemInCat(it.gearId, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className="iconbtn small"
+                      title="Omlaag (binnen categorie)"
+                      onClick={() => moveItemInCat(it.gearId, 1)}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      className="iconbtn"
+                      title="Bewerken (vooraf, notitie, weghalen)"
+                      onClick={() => setItemEditing({ kind: 'item', id: it.gearId, item: it, name: gear?.name || '(verwijderd)' })}
+                    >
+                      ✏️
+                    </button>
+                  </>
                 ) : (
                   <button
                     className={`iconbtn${it.skip ? ' active' : ''}`}
@@ -1345,6 +1459,17 @@ function BakView({ state, mutate }) {
                 }
               : null
           }
+          onMove={(dir) => {
+            mutate((s) => {
+              const arr = s.cats || [];
+              const i = arr.findIndex((c) => c.id === editingCat.id);
+              const j = i + dir;
+              if (i >= 0 && j >= 0 && j < arr.length) {
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+              }
+              return s;
+            });
+          }}
         />
       )}
     </div>
@@ -1380,12 +1505,13 @@ const CAT_EMOJIS = [
   '🎿', '🛹', '🤿', '🎤', '🎨', '🌧️',
 ];
 
-function CatForm({ cats, current, onSave, onDelete, onClose }) {
+function CatForm({ cats, current, onSave, onDelete, onMove, onClose }) {
   const [name, setName] = useState(current?.name || '');
   const [emoji, setEmoji] = useState(current?.emoji || CAT_EMOJIS[0]);
   const exists = cats.some(
     (c) => c.id !== current?.id && c.name.toLowerCase() === name.trim().toLowerCase()
   );
+  const idx = current ? cats.findIndex((c) => c.id === current.id) : -1;
   return (
     <Sheet title={current ? 'Categorie bewerken' : 'Nieuwe categorie'} onClose={onClose}>
       <input
@@ -1404,6 +1530,24 @@ function CatForm({ cats, current, onSave, onDelete, onClose }) {
           </button>
         ))}
       </div>
+      {current && onMove && (
+        <div className="row" style={{ marginTop: 14 }}>
+          <button
+            className="btn small secondary grow"
+            disabled={idx <= 0}
+            onClick={() => onMove(-1)}
+          >
+            ↑ Omhoog
+          </button>
+          <button
+            className="btn small secondary grow"
+            disabled={idx < 0 || idx >= cats.length - 1}
+            onClick={() => onMove(1)}
+          >
+            ↓ Omlaag
+          </button>
+        </div>
+      )}
       <div style={{ height: 16 }} />
       <div className="row">
         <button
@@ -1555,6 +1699,53 @@ function OthersView({ myEmail, mutate, onCopied }) {
 }
 
 /* ================= Sheet (modal) ================= */
+
+function WeatherInfo({ destination, departure, returnDate }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!destination || !departure) {
+      setData(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    fetchWeather(destination, departure, returnDate).then((d) => {
+      if (!cancelled) {
+        setData(d);
+        setLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [destination, departure, returnDate]);
+
+  if (!destination || !departure) return null;
+  if (loading) return <div className="weather-card muted">🌤️ Weer ophalen…</div>;
+  if (!data) return null;
+  if (data.tooFar)
+    return <div className="weather-card muted">🌤️ Te ver vooruit voor een voorspelling (max 15 dagen).</div>;
+  if (data.notFound)
+    return <div className="weather-card muted">🌤️ Bestemming "{destination}" niet gevonden.</div>;
+
+  return (
+    <div className="weather-card">
+      <div className="weather-summary">
+        <b>🌤️ {data.place}</b> · {data.tmin}–{data.tmax}°C
+        {data.wetDays > 0 ? ` · ${data.wetDays} regendag${data.wetDays > 1 ? 'en' : ''}` : ''}
+      </div>
+      <div className="weather-days">
+        {data.days.map((d) => (
+          <div key={d.date} className="weather-day" title={`${d.date}: ${d.tmin}–${d.tmax}°C`}>
+            <div className="weather-icon">{weatherIcon(d.code)}</div>
+            <div className="weather-tmax">{d.tmax}°</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function Confetti() {
   const pieces = useMemo(() => {
@@ -1723,6 +1914,138 @@ function PrepView({ state, mutate }) {
           ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+function ShareView({ share, myEmail, myState, mutate, onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    loadProfile(share.slug)
+      .then((r) => {
+        if (!r?.state) {
+          setError('Profiel of lijstje niet gevonden.');
+          return;
+        }
+        const list = r.state.lists?.find((l) => l.id === share.listId);
+        if (!list) {
+          setError('Dit lijstje bestaat niet (meer).');
+          return;
+        }
+        setData({ profile: r.state, list });
+      })
+      .catch((e) => setError(e.message));
+  }, [share.slug, share.listId]);
+
+  function copyToMine() {
+    if (!myEmail) {
+      alert('Log eerst zelf in om dit lijstje te kopiëren naar je eigen Bak.');
+      return;
+    }
+    mutate((s) => {
+      const myCatIds = new Set((s.cats || CATS).map((c) => c.id));
+      const myGearByName = new Map(s.gear.map((g) => [g.name.toLowerCase(), g]));
+      const theirGearById = Object.fromEntries(data.profile.gear.map((g) => [g.id, g]));
+      const items = [];
+      for (const it of data.list.items) {
+        const theirGear = theirGearById[it.gearId];
+        if (!theirGear) continue;
+        let mine = myGearByName.get(theirGear.name.toLowerCase());
+        if (!mine) {
+          mine = { id: uid(), name: theirGear.name, cat: myCatIds.has(theirGear.cat) ? theirGear.cat : 'overig' };
+          s.gear.push(mine);
+          myGearByName.set(mine.name.toLowerCase(), mine);
+        }
+        if (!items.some((x) => x.gearId === mine.id)) items.push({ gearId: mine.id, qty: it.qty || 1, packed: false });
+      }
+      s.lists.push({
+        id: uid(),
+        name: `${data.list.name} (van ${share.slug})`,
+        emoji: data.list.emoji || '🧳',
+        note: '',
+        destination: data.list.destination || '',
+        departure: '',
+        returnDate: '',
+        people: data.list.people || 1,
+        color: data.list.color || '',
+        items,
+        extras: (data.list.extras || []).map((it) => ({ id: uid(), name: it.name, qty: it.qty || 1, packed: false })),
+      });
+      return s;
+    });
+    alert('Gekopieerd naar je eigen Lijstjes!');
+    onClose();
+  }
+
+  return (
+    <div className="app">
+      <header className="header">
+        <h1>
+          🔗 Gedeeld lijstje
+          <span className="sub">door {share.slug}</span>
+        </h1>
+        <button className="linkbtn" onClick={onClose}>
+          {myEmail ? '← terug' : 'sluiten'}
+        </button>
+      </header>
+      <div className="page">
+        {error && <div className="empty">{error}</div>}
+        {!error && !data && <div className="empty">Laden…</div>}
+        {data && (
+          <>
+            <div className="card">
+              <div className="row">
+                <span style={{ fontSize: 26 }}>{data.list.emoji}</span>
+                <div className="grow">
+                  <div className="title">{data.list.name}</div>
+                  <div className="muted">{data.list.items.length + (data.list.extras || []).length} items</div>
+                </div>
+              </div>
+            </div>
+            <button className="btn" onClick={copyToMine}>
+              ⧉ Kopieer naar mijn lijstjes
+            </button>
+            {(() => {
+              const gearById = Object.fromEntries(data.profile.gear.map((g) => [g.id, g]));
+              const cats = data.profile.cats || CATS;
+              const known = new Set(cats.map((c) => c.id));
+              return cats.map((cat) => {
+                const items = data.list.items.filter((it) => {
+                  const c = gearById[it.gearId]?.cat;
+                  return (known.has(c) ? c : 'overig') === cat.id;
+                });
+                if (!items.length) return null;
+                return (
+                  <div key={cat.id} className="catsec">
+                    <h3>{cat.emoji} {cat.name}</h3>
+                    {items.map((it) => {
+                      const g = gearById[it.gearId];
+                      return (
+                        <div key={it.gearId} className="itemrow">
+                          <span className="name">{g?.name}</span>
+                          {it.qty > 1 && <span className="muted">× {it.qty}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              });
+            })()}
+            {(data.list.extras || []).length > 0 && (
+              <div className="catsec">
+                <h3>✨ Los in dit lijstje</h3>
+                {data.list.extras.map((it) => (
+                  <div key={it.id} className="itemrow">
+                    <span className="name">{it.name}</span>
+                    {it.qty > 1 && <span className="muted">× {it.qty}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

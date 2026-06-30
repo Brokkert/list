@@ -320,6 +320,55 @@ textarea.input {
   }
 }
 
+/* ---------- weer ---------- */
+.weather-card {
+  background: linear-gradient(135deg, #d6e9ff 0%, #fff4d6 100%);
+  border: 1px solid #b8d6ff66;
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #2c3e60;
+}
+[data-theme='dark'] .weather-card {
+  background: linear-gradient(135deg, #1a2a44 0%, #2e2614 100%);
+  border-color: #2a3f60;
+  color: #c3d4ee;
+}
+.weather-summary { font-weight: 600; }
+.weather-days {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.weather-day {
+  flex: 0 0 auto;
+  text-align: center;
+  min-width: 36px;
+}
+.weather-icon { font-size: 18px; }
+.weather-tmax { font-size: 11px; font-weight: 700; }
+
+/* ---------- kleur-chips ---------- */
+.colorchip {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.colorchip.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg) inset; }
+
+.iconbtn.small { font-size: 14px; padding: 2px; }
+.listcard { transition: border-color 0.1s; }
+
 /* ---------- vertrek-modus ---------- */
 .vmodus {
   position: fixed;
