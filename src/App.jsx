@@ -742,6 +742,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
   const [itemEditing, setItemEditing] = useState(null); // {kind:'item'|'extra', id, item, name}
   const [celebrate, setCelebrate] = useState(false);
   const [vertrekModus, setVertrekModus] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const p = listProgress(list);
   const wasDone = useRef(p.done);
   useEffect(() => {
@@ -1132,11 +1133,25 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
         </div>
       )}
 
-      <button className="btn" onClick={() => setPicking(true)}>
-        + Spullen toevoegen
-      </button>
+      <div className="row">
+        <button className="btn grow" onClick={() => setPicking(true)}>
+          + Spullen toevoegen
+        </button>
+        <button className="btn small secondary" onClick={() => setSuggesting(true)}>
+          💡 Suggesties
+        </button>
+      </div>
 
       {picking && <Picker list={list} state={state} mutate={mutate} onClose={() => setPicking(false)} />}
+      {suggesting && (
+        <SuggestionsSheet
+          list={list}
+          state={state}
+          myEmail={myEmail}
+          mutate={mutate}
+          onClose={() => setSuggesting(false)}
+        />
+      )}
       {vertrekModus && (
         <VertrekModus
           list={list}
@@ -1915,6 +1930,141 @@ function PrepView({ state, mutate }) {
         </div>
       ))}
     </div>
+  );
+}
+
+async function runSuggestions(list, myEmail) {
+  const profiles = await listCloudProfiles();
+  const others = profiles.filter((p) => p.email !== myEmail);
+  if (!others.length) return { similar: {}, totalSimilar: 0, all: {}, totalAll: 0 };
+  const fullData = await Promise.all(others.map((p) => loadProfile(p.slug).catch(() => null)));
+
+  const similar = {};
+  let totalSimilar = 0;
+  const all = {};
+  let totalAll = 0;
+  const myDest = list.destination?.toLowerCase().trim() || '';
+
+  for (const data of fullData) {
+    if (!data?.state?.lists) continue;
+    const gearByGearId = Object.fromEntries(data.state.gear.map((g) => [g.id, g]));
+    for (const otherList of data.state.lists) {
+      totalAll++;
+      const names = new Set();
+      for (const it of otherList.items || []) {
+        const n = gearByGearId[it.gearId]?.name;
+        if (n) names.add(n);
+      }
+      for (const it of otherList.extras || []) if (it.name) names.add(it.name);
+      for (const n of names) all[n] = (all[n] || 0) + 1;
+
+      const sameEmoji = otherList.emoji && otherList.emoji === list.emoji;
+      const sameDest = myDest && otherList.destination?.toLowerCase().trim() === myDest;
+      if (sameEmoji || sameDest) {
+        totalSimilar++;
+        for (const n of names) similar[n] = (similar[n] || 0) + 1;
+      }
+    }
+  }
+  return { similar, totalSimilar, all, totalAll };
+}
+
+function SuggestionsSheet({ list, state, myEmail, mutate, onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    runSuggestions(list, myEmail)
+      .then((d) => !cancelled && setData(d))
+      .catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
+  }, [list.id]);
+
+  const myItemNames = useMemo(() => {
+    const out = new Set();
+    const gearById = Object.fromEntries(state.gear.map((g) => [g.id, g]));
+    for (const it of list.items) {
+      const n = gearById[it.gearId]?.name;
+      if (n) out.add(n.toLowerCase());
+    }
+    for (const it of list.extras || []) out.add(it.name.toLowerCase());
+    return out;
+  }, [list, state.gear]);
+
+  function addByName(name) {
+    mutate((s) => {
+      let gear = s.gear.find((g) => g.name.toLowerCase() === name.toLowerCase());
+      if (!gear) {
+        gear = { id: uid(), name, cat: 'overig' };
+        s.gear.push(gear);
+      }
+      const l = s.lists.find((x) => x.id === list.id);
+      if (!l.items.find((it) => it.gearId === gear.id)) {
+        l.items.push({ gearId: gear.id, qty: 1, packed: false, note: '' });
+      }
+      return s;
+    });
+  }
+
+  if (error)
+    return (
+      <Sheet title="💡 Suggesties" onClose={onClose}>
+        <div className="empty">Kon profielen niet laden: {error}</div>
+      </Sheet>
+    );
+  if (!data)
+    return (
+      <Sheet title="💡 Suggesties" onClose={onClose}>
+        <div className="empty">Zoeken in andere profielen…</div>
+      </Sheet>
+    );
+
+  const useSimilar = data.totalSimilar > 0;
+  const source = useSimilar ? data.similar : data.all;
+  const total = useSimilar ? data.totalSimilar : data.totalAll;
+  const sorted = Object.entries(source)
+    .filter(([n]) => !myItemNames.has(n.toLowerCase()))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 30);
+
+  return (
+    <Sheet title="💡 Suggesties van anderen" onClose={onClose}>
+      <p className="muted">
+        {useSimilar
+          ? `Gebaseerd op ${total} vergelijkbare ${total === 1 ? 'lijstje' : 'lijstjes'} (zelfde emoji${list.destination ? ' of bestemming' : ''}).`
+          : total
+          ? `Geen vergelijkbare reizen gevonden — populairste items van alle ${total} lijstjes:`
+          : 'Er zijn nog geen andere profielen om van te leren.'}
+      </p>
+      {total === 0 && (
+        <div className="empty">
+          <span className="big">👻</span>
+          Geen anderen actief.
+        </div>
+      )}
+      {sorted.length === 0 && total > 0 && (
+        <div className="empty">
+          <span className="big">🎯</span>
+          Niks nieuws — jij hebt alles al!
+        </div>
+      )}
+      {sorted.map(([name, count]) => {
+        const pct = Math.round((count / total) * 100);
+        const inBak = state.gear.some((g) => g.name.toLowerCase() === name.toLowerCase());
+        return (
+          <div key={name} className="itemrow">
+            <span className="name">{name}</span>
+            <span className="badge">{pct}%</span>
+            {inBak && <span className="muted" style={{ fontSize: 11 }}>in Bak</span>}
+            <button className="btn small" onClick={() => addByName(name)}>
+              +
+            </button>
+          </div>
+        );
+      })}
+    </Sheet>
   );
 }
 
