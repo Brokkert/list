@@ -16,6 +16,17 @@ const cacheKey = (slug) => `paklijst:cache:${slug}`;
 
 const EMOJIS = ['🌞', '🏖️', '⛷️', '🏂', '🏕️', '🚗', '✈️', '🚆', '🛳️', '🥾', '🎉', '👶', '💼', '🧳'];
 
+const PREP_PRESETS = ['Kopen', 'Ophalen', 'Opzoeken', 'Klaarleggen', 'Wassen', 'Lenen'];
+const PREP_EMOJI = {
+  Kopen: '🛒',
+  Ophalen: '📦',
+  Opzoeken: '🔍',
+  Klaarleggen: '📋',
+  Wassen: '🧺',
+  Lenen: '🤝',
+};
+const prepEmoji = (label) => PREP_EMOJI[label] || '📝';
+
 // Oudere profielen hebben nog geen eigen categorielijst; geef ze de
 // standaardset en verhuis vermaak-items naar de nieuwe categorie.
 function migrate(s) {
@@ -45,15 +56,51 @@ function listProgress(list) {
   const all = [...list.items, ...(list.extras || [])];
   const skipped = all.filter((i) => !i.packed && i.skip).length;
   const packed = all.filter((i) => i.packed).length;
-  const toPack = all.length - skipped; // "niet mee" hoeft niet ingepakt
+  const toPack = all.length - skipped;
+  const pendingPrep = all.filter((i) => i.prep && !i.prep.done && !i.packed && !i.skip).length;
   return {
     total: all.length,
     toPack,
     packed,
     skipped,
+    pendingPrep,
     done: all.length > 0 && packed === toPack,
     pct: toPack ? Math.round((packed / toPack) * 100) : all.length ? 100 : 0,
   };
+}
+
+function collectOpenPrep(state) {
+  const out = [];
+  const gearById = Object.fromEntries(state.gear.map((g) => [g.id, g]));
+  for (const list of state.lists) {
+    for (const it of list.items) {
+      if (it.prep && !it.prep.done && !it.packed && !it.skip) {
+        out.push({
+          key: `${list.id}:i:${it.gearId}`,
+          name: gearById[it.gearId]?.name || '(verwijderd)',
+          qty: it.qty,
+          list,
+          kind: 'item',
+          gearId: it.gearId,
+          prep: it.prep,
+        });
+      }
+    }
+    for (const it of list.extras || []) {
+      if (it.prep && !it.prep.done && !it.packed && !it.skip) {
+        out.push({
+          key: `${list.id}:e:${it.id}`,
+          name: it.name,
+          qty: it.qty,
+          list,
+          kind: 'extra',
+          id: it.id,
+          prep: it.prep,
+        });
+      }
+    }
+  }
+  return out;
 }
 
 function useSyncStatus() {
@@ -234,6 +281,7 @@ function Main({ email, state, mutate, onLogout }) {
   const status = useSyncStatus();
 
   const openList = state.lists.find((l) => l.id === openListId);
+  const prepCount = useMemo(() => collectOpenPrep(state).length, [state.lists, state.gear]);
 
   return (
     <div className="app">
@@ -277,6 +325,8 @@ function Main({ email, state, mutate, onLogout }) {
         <ListDetail list={openList} state={state} mutate={mutate} onClose={() => setOpenListId(null)} />
       ) : tab === 'lijsten' ? (
         <ListsView state={state} mutate={mutate} onOpen={setOpenListId} />
+      ) : tab === 'vooraf' ? (
+        <PrepView state={state} mutate={mutate} />
       ) : tab === 'bak' ? (
         <BakView state={state} mutate={mutate} />
       ) : (
@@ -288,6 +338,11 @@ function Main({ email, state, mutate, onLogout }) {
           <div className="inner">
             <button className={tab === 'lijsten' ? 'active' : ''} onClick={() => setTab('lijsten')}>
               <span className="ico">🧳</span>Lijstjes
+            </button>
+            <button className={tab === 'vooraf' ? 'active' : ''} onClick={() => setTab('vooraf')}>
+              <span className="ico">📝</span>
+              Vooraf
+              {prepCount > 0 && <span className="tabdot">{prepCount}</span>}
             </button>
             <button className={tab === 'bak' ? 'active' : ''} onClick={() => setTab('bak')}>
               <span className="ico">📦</span>De Bak
@@ -324,7 +379,10 @@ function ListsView({ state, mutate, onOpen }) {
               <div className="grow">
                 <div className="title">{list.name}</div>
                 <div className="muted">
-                  {p.packed}/{p.toPack} ingepakt{p.skipped ? ` · ${p.skipped} niet mee` : ''}{list.note ? ` · ${list.note}` : ''}
+                  {p.packed}/{p.toPack} ingepakt
+                  {p.skipped ? ` · ${p.skipped} niet mee` : ''}
+                  {p.pendingPrep ? ` · 📝 ${p.pendingPrep} te doen vooraf` : ''}
+                  {list.note ? ` · ${list.note}` : ''}
                 </div>
               </div>
               {p.done && <span className="badge">klaar ✓</span>}
@@ -388,6 +446,7 @@ function ListDetail({ list, state, mutate, onClose }) {
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [prepEditing, setPrepEditing] = useState(null); // {kind:'item'|'extra', id, current}
   const p = listProgress(list);
 
   const cats = state.cats || CATS;
@@ -421,6 +480,20 @@ function ListDetail({ list, state, mutate, onClose }) {
       if (it) fn(it, l);
       return s;
     });
+  }
+
+  function setPrep(target, prep) {
+    if (target.kind === 'item') {
+      patchItem(target.id, (x) => {
+        if (prep) x.prep = prep;
+        else delete x.prep;
+      });
+    } else {
+      patchExtra(target.id, (x) => {
+        if (prep) x.prep = prep;
+        else delete x.prep;
+      });
+    }
   }
 
   return (
@@ -525,6 +598,12 @@ function ListDetail({ list, state, mutate, onClose }) {
                   {it.packed ? '✓' : ''}
                 </button>
                 <span className="name">{gear?.name || '(verwijderd item)'}</span>
+                <PrepBadge
+                  it={it}
+                  editMode={editMode}
+                  onToggleDone={() => patchItem(it.gearId, (x) => (x.prep.done = !x.prep.done))}
+                  onEdit={() => setPrepEditing({ kind: 'item', id: it.gearId, current: it.prep, name: gear?.name })}
+                />
                 {it.skip ? (
                   <span className="badge off">niet mee</span>
                 ) : (
@@ -585,6 +664,12 @@ function ListDetail({ list, state, mutate, onClose }) {
                 {it.packed ? '✓' : ''}
               </button>
               <span className="name">{it.name}</span>
+              <PrepBadge
+                it={it}
+                editMode={editMode}
+                onToggleDone={() => patchExtra(it.id, (x) => (x.prep.done = !x.prep.done))}
+                onEdit={() => setPrepEditing({ kind: 'extra', id: it.id, current: it.prep, name: it.name })}
+              />
               <span className="qty">
                 <button onClick={() => patchExtra(it.id, (x) => (x.qty = Math.max(1, x.qty - 1)))}>−</button>
                 <span>{it.qty}</span>
@@ -615,6 +700,17 @@ function ListDetail({ list, state, mutate, onClose }) {
       </button>
 
       {picking && <Picker list={list} state={state} mutate={mutate} onClose={() => setPicking(false)} />}
+      {prepEditing && (
+        <PrepSheet
+          name={prepEditing.name}
+          current={prepEditing.current}
+          onClose={() => setPrepEditing(null)}
+          onSave={(prep) => {
+            setPrep(prepEditing, prep);
+            setPrepEditing(null);
+          }}
+        />
+      )}
       {editing && (
         <ListForm
           initial={list}
@@ -1067,6 +1163,138 @@ function OthersView({ myEmail, mutate, onCopied }) {
 }
 
 /* ================= Sheet (modal) ================= */
+
+function PrepBadge({ it, editMode, onToggleDone, onEdit }) {
+  if (editMode) {
+    return (
+      <button
+        className={`prepbadge ${it.prep ? '' : 'empty'}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit();
+        }}
+      >
+        {it.prep ? `${prepEmoji(it.prep.label)} ${it.prep.label} ✏️` : '+ vooraf'}
+      </button>
+    );
+  }
+  if (!it.prep || it.skip || it.packed) return null;
+  return (
+    <button
+      className={`prepbadge ${it.prep.done ? 'done' : 'open'}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggleDone();
+      }}
+      title={it.prep.done ? `${it.prep.label}: klaar` : `Nog ${it.prep.label.toLowerCase()}`}
+    >
+      {it.prep.done ? '✓' : prepEmoji(it.prep.label)} {it.prep.label}
+    </button>
+  );
+}
+
+function PrepSheet({ name, current, onSave, onClose }) {
+  const [label, setLabel] = useState(current?.label || '');
+  return (
+    <Sheet title={`Vooraf — ${name}`} onClose={onClose}>
+      <p className="muted">Wat moet je vóór de vakantie nog voor dit item regelen?</p>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+        {PREP_PRESETS.map((p) => (
+          <button
+            key={p}
+            className={`btn small ${label === p ? '' : 'secondary'}`}
+            onClick={() => setLabel(p)}
+          >
+            {prepEmoji(p)} {p}
+          </button>
+        ))}
+      </div>
+      <div style={{ height: 10 }} />
+      <input
+        className="input"
+        placeholder="Of typ iets anders… (bijv. Boeken, Bellen)"
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+      />
+      <div style={{ height: 14 }} />
+      <div className="row">
+        <button
+          className="btn grow"
+          disabled={!label.trim()}
+          onClick={() =>
+            onSave({ label: label.trim(), done: current?.done && current.label === label.trim() ? true : false })
+          }
+        >
+          Opslaan
+        </button>
+        {current && (
+          <button className="btn small danger" onClick={() => onSave(null)}>
+            Wissen
+          </button>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
+function PrepView({ state, mutate }) {
+  const open = collectOpenPrep(state);
+  const groups = {};
+  for (const o of open) (groups[o.prep.label] ||= []).push(o);
+
+  function markDone(o) {
+    mutate((s) => {
+      const l = s.lists.find((x) => x.id === o.list.id);
+      const it = o.kind === 'item'
+        ? l.items.find((x) => x.gearId === o.gearId)
+        : (l.extras || []).find((x) => x.id === o.id);
+      if (it?.prep) it.prep.done = true;
+      return s;
+    });
+  }
+
+  if (open.length === 0) {
+    return (
+      <div className="page">
+        <div className="empty">
+          <span className="big">✨</span>
+          Niks vooraf te doen.
+          <div style={{ marginTop: 10, fontSize: 13 }}>
+            Open een lijstje, tik op <b>✏️ bewerk</b> en geef items een vooraf-actie
+            (Kopen, Ophalen, Opzoeken…). Ze verschijnen dan hier als overzicht.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <p className="muted" style={{ margin: '0 4px' }}>
+        Alles wat je nog moet regelen vóór je gaat inpakken, gegroepeerd per actie.
+      </p>
+      {Object.entries(groups).map(([label, items]) => (
+        <div key={label} className="catsec">
+          <h3>
+            {prepEmoji(label)} {label} <span style={{ opacity: 0.6 }}>({items.length})</span>
+          </h3>
+          {items.map((o) => (
+            <div key={o.key} className="itemrow">
+              <button className="check" onClick={() => markDone(o)} />
+              <span className="name">
+                {o.name}
+                {o.qty > 1 ? ` ×${o.qty}` : ''}
+              </span>
+              <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                {o.list.emoji} {o.list.name}
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Sheet({ title, children, onClose }) {
   return (

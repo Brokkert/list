@@ -164,6 +164,48 @@ input, select { font-family: inherit; font-size: 16px; }
 .itemrow.skipped .name { text-decoration: line-through; color: var(--muted); }
 .iconbtn.active { color: var(--danger); }
 .badge.off { background: #f9e9e7; color: var(--danger); }
+
+.prepbadge {
+  background: #fff4d6;
+  color: #8a5a00;
+  border: 1px solid #f0d68a;
+  border-radius: 99px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.prepbadge.done {
+  background: #e0f3e6;
+  color: #19733b;
+  border-color: #b6e0c2;
+}
+.prepbadge.empty {
+  background: transparent;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  font-weight: 500;
+}
+
+.tabbar button { position: relative; }
+.tabdot {
+  position: absolute;
+  top: 4px;
+  right: calc(50% - 22px);
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 99px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .check {
   width: 26px;
   height: 26px;
