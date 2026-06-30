@@ -320,6 +320,94 @@ textarea.input {
   }
 }
 
+/* ---------- vertrek-modus ---------- */
+.vmodus {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  padding-top: calc(16px + env(safe-area-inset-top));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+.vmodus-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 24px;
+  width: 100%;
+  max-width: 480px;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+.vmodus-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 6px 10px;
+}
+.vmodus-count {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+}
+.vmodus-name {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+.vmodus-qty {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.vmodus-note {
+  margin: 8px auto 12px;
+  max-width: 320px;
+}
+.vmodus-prepwarn {
+  background: #fff4d6;
+  color: #8a5a00;
+  border: 1px solid #f0d68a;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 8px auto 14px;
+  display: inline-block;
+}
+[data-theme='dark'] .vmodus-prepwarn { background: #3a2f15; color: #ffd97a; border-color: #5a4a1f; }
+.vmodus-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 20px 0 14px;
+}
+.vmodus-actions .btn { padding: 16px; font-size: 16px; }
+.vmodus-actions .btn.big { padding: 20px; font-size: 18px; font-weight: 700; }
+.vmodus-actions .btn.danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1.5px solid var(--danger);
+}
+.vmodus-title {
+  font-size: 28px;
+  font-weight: 800;
+  margin-top: 8px;
+}
+
 .tabbar button { position: relative; }
 .tabdot {
   position: absolute;

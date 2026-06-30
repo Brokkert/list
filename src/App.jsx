@@ -46,7 +46,37 @@ function migrate(s) {
     for (const it of l.items || []) if (it.note == null) it.note = '';
     for (const it of l.extras || []) if (it.note == null) it.note = '';
   }
+  if (!Array.isArray(s.templates)) s.templates = [];
   return s;
+}
+
+function templateFromList(list) {
+  return {
+    id: uid(),
+    name: list.name,
+    emoji: list.emoji,
+    destination: list.destination || '',
+    people: list.people || 1,
+    items: list.items.map((it) => ({ gearId: it.gearId, qty: it.qty, note: it.note || '' })),
+    extras: (list.extras || []).map((it) => ({ name: it.name, qty: it.qty, note: it.note || '' })),
+    savedAt: new Date().toISOString(),
+  };
+}
+
+function listFromTemplate(tpl, overrides = {}) {
+  return {
+    id: uid(),
+    name: tpl.name,
+    emoji: tpl.emoji || '🌞',
+    destination: tpl.destination || '',
+    departure: '',
+    returnDate: '',
+    people: tpl.people || 1,
+    note: '',
+    items: tpl.items.map((it) => ({ gearId: it.gearId, qty: it.qty, packed: false, note: it.note || '' })),
+    extras: tpl.extras.map((it) => ({ id: uid(), name: it.name, qty: it.qty, packed: false, note: it.note || '' })),
+    ...overrides,
+  };
 }
 
 function daysUntil(yyyymmdd) {
@@ -480,6 +510,42 @@ function ListsView({ state, mutate, onOpen }) {
       <button className="btn ghost" onClick={() => setCreating(true)}>
         + Nieuw lijstje
       </button>
+      {(state.templates || []).length > 0 && (
+        <div>
+          <div className="muted" style={{ margin: '8px 4px 4px' }}>📋 Templates</div>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+            {(state.templates || []).map((tpl) => (
+              <button
+                key={tpl.id}
+                className="btn small secondary"
+                onClick={() => {
+                  mutate((s) => {
+                    s.lists.push(listFromTemplate(tpl));
+                    return s;
+                  });
+                }}
+                title={`Maak nieuw lijstje uit "${tpl.name}"`}
+              >
+                {tpl.emoji} {tpl.name}
+                <span
+                  className="cat-edit"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm(`Template "${tpl.name}" verwijderen?`)) {
+                      mutate((s) => {
+                        s.templates = s.templates.filter((t) => t.id !== tpl.id);
+                        return s;
+                      });
+                    }
+                  }}
+                >
+                  ✕
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {creating && (
         <ListForm
           onSave={(meta) => {
@@ -610,6 +676,7 @@ function ListDetail({ list, state, mutate, onClose }) {
   const [editMode, setEditMode] = useState(false);
   const [itemEditing, setItemEditing] = useState(null); // {kind:'item'|'extra', id, item, name}
   const [celebrate, setCelebrate] = useState(false);
+  const [vertrekModus, setVertrekModus] = useState(false);
   const p = listProgress(list);
   const wasDone = useRef(p.done);
   useEffect(() => {
@@ -756,10 +823,31 @@ function ListDetail({ list, state, mutate, onClose }) {
         </div>
       )}
 
+      {!editMode && p.toPack > 0 && (
+        <button className="btn" onClick={() => setVertrekModus(true)}>
+          🚀 Vertrek-modus ({p.toPack - p.packed} te doen)
+        </button>
+      )}
+
       {editMode && (
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <button className="btn small secondary grow" onClick={() => setEditing(true)}>
-            ✏️ Naam & emoji
+            ✏️ Reis-info
+          </button>
+          <button
+            className="btn small secondary grow"
+            onClick={() => {
+              const nm = prompt('Naam voor template:', list.name);
+              if (!nm) return;
+              mutate((s) => {
+                if (!s.templates) s.templates = [];
+                s.templates.push({ ...templateFromList(list), name: nm });
+                return s;
+              });
+              alert(`Template "${nm}" opgeslagen — terug in Lijstjes-overzicht.`);
+            }}
+          >
+            📋 Bewaar als template
           </button>
           <button
             className="btn small secondary grow"
@@ -935,6 +1023,15 @@ function ListDetail({ list, state, mutate, onClose }) {
       </button>
 
       {picking && <Picker list={list} state={state} mutate={mutate} onClose={() => setPicking(false)} />}
+      {vertrekModus && (
+        <VertrekModus
+          list={list}
+          gearById={gearById}
+          patchItem={patchItem}
+          patchExtra={patchExtra}
+          onClose={() => setVertrekModus(false)}
+        />
+      )}
       {itemEditing && (
         <ItemSheet
           name={itemEditing.name}
@@ -1626,6 +1723,106 @@ function PrepView({ state, mutate }) {
           ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+function VertrekModus({ list, gearById, patchItem, patchExtra, onClose }) {
+  // Lopen door alle items (bak + extras) die nog niet ingepakt of overgeslagen zijn.
+  const queue = useMemo(() => {
+    const out = [];
+    for (const it of list.items) {
+      if (!it.packed && !it.skip) out.push({ kind: 'item', id: it.gearId, ref: it, name: gearById[it.gearId]?.name || '(verwijderd)' });
+    }
+    for (const it of list.extras || []) {
+      if (!it.packed && !it.skip) out.push({ kind: 'extra', id: it.id, ref: it, name: it.name });
+    }
+    return out;
+  }, [list.items, list.extras, gearById]);
+
+  const total = useMemo(() => {
+    const all = [...list.items, ...(list.extras || [])];
+    const packed = all.filter((i) => i.packed).length;
+    const skipped = all.filter((i) => i.skip).length;
+    return { all: all.length, packed, skipped };
+  }, [list.items, list.extras]);
+
+  const [idx, setIdx] = useState(0);
+  const cur = queue[idx];
+
+  if (!cur) {
+    return (
+      <div className="vmodus">
+        <Confetti />
+        <div className="vmodus-card">
+          <div style={{ fontSize: 72 }}>🎉</div>
+          <div className="vmodus-title">Vakantie ready!</div>
+          <div className="muted" style={{ marginTop: 8 }}>
+            {total.packed} ingepakt · {total.skipped} niet mee
+          </div>
+          <div style={{ height: 20 }} />
+          <button className="btn" onClick={onClose}>
+            Sluiten
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function patch(fn) {
+    if (cur.kind === 'item') patchItem(cur.id, fn);
+    else patchExtra(cur.id, fn);
+  }
+  function pak() {
+    patch((x) => (x.packed = true));
+    setIdx(idx + 1);
+  }
+  function nietMee() {
+    patch((x) => {
+      x.skip = true;
+      x.packed = false;
+    });
+    setIdx(idx + 1);
+  }
+  function later() {
+    setIdx(idx + 1);
+  }
+  function vorige() {
+    setIdx(Math.max(0, idx - 1));
+  }
+
+  return (
+    <div className="vmodus">
+      <div className="vmodus-card">
+        <button className="vmodus-close" onClick={onClose} title="Sluiten">
+          ✕
+        </button>
+        <div className="muted vmodus-count">
+          {idx + 1} van {queue.length}
+        </div>
+        <div className="vmodus-name">{cur.name}</div>
+        {cur.ref.qty > 1 && <div className="muted vmodus-qty">× {cur.ref.qty}</div>}
+        {cur.ref.note && <div className="itemnote vmodus-note">💬 {cur.ref.note}</div>}
+        {cur.ref.prep && !cur.ref.prep.done && (
+          <div className="vmodus-prepwarn">
+            ⚠️ Eerst nog {cur.ref.prep.label.toLowerCase()}!
+          </div>
+        )}
+        <div className="vmodus-actions">
+          <button className="btn danger" onClick={nietMee}>
+            ⊘ Niet mee
+          </button>
+          <button className="btn secondary" onClick={later}>
+            → Sla over
+          </button>
+          <button className="btn big" onClick={pak}>
+            ✓ Ingepakt
+          </button>
+        </div>
+        <button className="linkbtn" onClick={vorige} disabled={idx === 0} style={{ color: 'var(--muted)' }}>
+          ← Vorige
+        </button>
+      </div>
     </div>
   );
 }
