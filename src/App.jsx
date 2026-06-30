@@ -38,7 +38,45 @@ function migrate(s) {
       }
     }
   }
+  for (const l of s.lists || []) {
+    if (l.destination == null) l.destination = '';
+    if (l.departure == null) l.departure = '';
+    if (l.returnDate == null) l.returnDate = '';
+    if (l.people == null) l.people = 1;
+    for (const it of l.items || []) if (it.note == null) it.note = '';
+    for (const it of l.extras || []) if (it.note == null) it.note = '';
+  }
   return s;
+}
+
+function daysUntil(yyyymmdd) {
+  if (!yyyymmdd) return null;
+  const target = new Date(yyyymmdd + 'T00:00:00');
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.round((target - now) / 86400000);
+}
+function countdownLabel(dep) {
+  const d = daysUntil(dep);
+  if (d == null) return '';
+  if (d < -1) return `${-d} dagen geleden`;
+  if (d === -1) return 'gisteren';
+  if (d === 0) return 'vandaag! 🎒';
+  if (d === 1) return 'morgen!';
+  if (d <= 7) return `nog ${d} dagen`;
+  return `nog ${d} dagen`;
+}
+function formatDateRange(dep, ret) {
+  if (!dep) return '';
+  const f = (s) =>
+    new Date(s + 'T00:00:00').toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+  return ret ? `${f(dep)} – ${f(ret)}` : f(dep);
+}
+function tripDays(dep, ret) {
+  if (!dep || !ret) return null;
+  const d1 = new Date(dep + 'T00:00:00');
+  const d2 = new Date(ret + 'T00:00:00');
+  return Math.max(1, Math.round((d2 - d1) / 86400000) + 1);
 }
 
 function groupByCat(gear, cats) {
@@ -119,10 +157,37 @@ const STATUS_LABEL = {
 
 /* ================= App ================= */
 
+const LS_THEME = 'paklijst:theme';
+const THEMES = ['auto', 'light', 'dark'];
+const THEME_ICON = { auto: '🌗', light: '☀️', dark: '🌙' };
+const THEME_LABEL = { auto: 'automatisch', light: 'licht', dark: 'donker' };
+
+function useTheme() {
+  const [theme, setTheme] = useState(() => localStorage.getItem(LS_THEME) || 'auto');
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'auto' && typeof window.matchMedia === 'function') {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      const apply = () => root.setAttribute('data-theme', mq.matches ? 'dark' : 'light');
+      apply();
+      mq.addEventListener?.('change', apply);
+      return () => mq.removeEventListener?.('change', apply);
+    }
+    root.setAttribute('data-theme', theme === 'auto' ? 'light' : theme);
+  }, [theme]);
+  const cycle = () => {
+    const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+    localStorage.setItem(LS_THEME, next);
+    setTheme(next);
+  };
+  return [theme, cycle];
+}
+
 export default function App() {
   const [email, setEmail] = useState(() => localStorage.getItem(LS_LAST) || null);
   const [state, setState] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [theme, cycleTheme] = useTheme();
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -215,7 +280,7 @@ export default function App() {
       </div>
     );
   }
-  return <Main email={email} state={state} mutate={mutate} onLogout={logout} />;
+  return <Main email={email} state={state} mutate={mutate} onLogout={logout} theme={theme} cycleTheme={cycleTheme} />;
 }
 
 /* ================= Login ================= */
@@ -275,7 +340,7 @@ function Login({ onLogin }) {
 
 /* ================= Main shell ================= */
 
-function Main({ email, state, mutate, onLogout }) {
+function Main({ email, state, mutate, onLogout, theme, cycleTheme }) {
   const [tab, setTab] = useState('lijsten');
   const [openListId, setOpenListId] = useState(null);
   const status = useSyncStatus();
@@ -296,6 +361,13 @@ function Main({ email, state, mutate, onLogout }) {
           )}
           <span className="sub">{email}</span>
         </h1>
+        <button
+          className="syncdot"
+          title={`Thema: ${THEME_LABEL[theme]} (tik om te wisselen)`}
+          onClick={cycleTheme}
+        >
+          {THEME_ICON[theme]}
+        </button>
         <button
           className="syncdot"
           title={STATUS_LABEL[status]}
@@ -372,12 +444,21 @@ function ListsView({ state, mutate, onOpen }) {
       )}
       {state.lists.map((list) => {
         const p = listProgress(list);
+        const countdown = countdownLabel(list.departure);
+        const range = formatDateRange(list.departure, list.returnDate);
+        const days = tripDays(list.departure, list.returnDate);
+        const metaBits = [];
+        if (list.destination) metaBits.push(`📍 ${list.destination}`);
+        if (range) metaBits.push(`🗓️ ${range}`);
+        if ((list.people || 1) > 1) metaBits.push(`👥 ${list.people}`);
+        if (days) metaBits.push(`${days}d`);
         return (
           <div key={list.id} className="card tap" onClick={() => onOpen(list.id)}>
             <div className="row">
               <span style={{ fontSize: 26 }}>{list.emoji}</span>
               <div className="grow">
                 <div className="title">{list.name}</div>
+                {metaBits.length > 0 && <div className="muted listmeta">{metaBits.join(' · ')}</div>}
                 <div className="muted">
                   {p.packed}/{p.toPack} ingepakt
                   {p.skipped ? ` · ${p.skipped} niet mee` : ''}
@@ -385,7 +466,10 @@ function ListsView({ state, mutate, onOpen }) {
                   {list.note ? ` · ${list.note}` : ''}
                 </div>
               </div>
-              {p.done && <span className="badge">klaar ✓</span>}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                {p.done && <span className="badge">klaar ✓</span>}
+                {countdown && <span className="badge countdown">{countdown}</span>}
+              </div>
             </div>
             <div className={`progress${p.done ? ' done' : ''}`}>
               <div style={{ width: `${p.pct}%` }} />
@@ -398,9 +482,15 @@ function ListsView({ state, mutate, onOpen }) {
       </button>
       {creating && (
         <ListForm
-          onSave={(name, emoji) => {
+          onSave={(meta) => {
             mutate((s) => {
-              s.lists.push({ id: uid(), name, emoji, note: '', items: [], extras: [] });
+              s.lists.push({
+                id: uid(),
+                ...meta,
+                note: '',
+                items: [],
+                extras: [],
+              });
               return s;
             });
             setCreating(false);
@@ -415,11 +505,18 @@ function ListsView({ state, mutate, onOpen }) {
 function ListForm({ initial, onSave, onClose }) {
   const [name, setName] = useState(initial?.name || '');
   const [emoji, setEmoji] = useState(initial?.emoji || '🌞');
+  const [destination, setDestination] = useState(initial?.destination || '');
+  const [departure, setDeparture] = useState(initial?.departure || '');
+  const [returnDate, setReturnDate] = useState(initial?.returnDate || '');
+  const [people, setPeople] = useState(initial?.people || 1);
+
+  const days = tripDays(departure, returnDate);
+
   return (
     <Sheet title={initial ? 'Lijstje aanpassen' : 'Nieuw lijstje'} onClose={onClose}>
       <input
         className="input"
-        placeholder="Bijv. Wintersport 2027"
+        placeholder="Naam, bijv. Wintersport 2027"
         value={name}
         autoFocus
         onChange={(e) => setName(e.target.value)}
@@ -432,8 +529,73 @@ function ListForm({ initial, onSave, onClose }) {
           </button>
         ))}
       </div>
+      <div className="formsection">
+        <label className="formlabel">📍 Waarheen?</label>
+        <input
+          className="input"
+          placeholder="Bijv. Lissabon, Sauerland, Texel…"
+          value={destination}
+          onChange={(e) => setDestination(e.target.value)}
+        />
+      </div>
+      <div className="formsection">
+        <label className="formlabel">🗓️ Wanneer?</label>
+        <div className="row">
+          <div className="grow">
+            <div className="muted formsub">Heen</div>
+            <input
+              className="input"
+              type="date"
+              value={departure}
+              onChange={(e) => setDeparture(e.target.value)}
+            />
+          </div>
+          <div className="grow">
+            <div className="muted formsub">Terug</div>
+            <input
+              className="input"
+              type="date"
+              value={returnDate}
+              onChange={(e) => setReturnDate(e.target.value)}
+            />
+          </div>
+        </div>
+        {days && (
+          <div className="muted formsub" style={{ marginTop: 6 }}>
+            = {days} {days === 1 ? 'dag' : 'dagen'}
+          </div>
+        )}
+      </div>
+      <div className="formsection">
+        <label className="formlabel">👥 Met hoeveel personen?</label>
+        <div className="row">
+          <button className="btn small secondary" onClick={() => setPeople(Math.max(1, people - 1))}>
+            −
+          </button>
+          <div className="grow" style={{ textAlign: 'center', fontWeight: 700, fontSize: 18 }}>
+            {people}
+          </div>
+          <button className="btn small secondary" onClick={() => setPeople(people + 1)}>
+            +
+          </button>
+        </div>
+      </div>
       <div style={{ height: 16 }} />
-      <button className="btn" style={{ width: '100%' }} disabled={!name.trim()} onClick={() => onSave(name.trim(), emoji)}>
+      <button
+        className="btn"
+        style={{ width: '100%' }}
+        disabled={!name.trim()}
+        onClick={() =>
+          onSave({
+            name: name.trim(),
+            emoji,
+            destination: destination.trim(),
+            departure,
+            returnDate,
+            people,
+          })
+        }
+      >
         Opslaan
       </button>
     </Sheet>
@@ -446,8 +608,18 @@ function ListDetail({ list, state, mutate, onClose }) {
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editMode, setEditMode] = useState(false);
-  const [prepEditing, setPrepEditing] = useState(null); // {kind:'item'|'extra', id, current}
+  const [itemEditing, setItemEditing] = useState(null); // {kind:'item'|'extra', id, item, name}
+  const [celebrate, setCelebrate] = useState(false);
   const p = listProgress(list);
+  const wasDone = useRef(p.done);
+  useEffect(() => {
+    if (p.done && !wasDone.current) {
+      setCelebrate(true);
+      const t = setTimeout(() => setCelebrate(false), 3000);
+      return () => clearTimeout(t);
+    }
+    wasDone.current = p.done;
+  }, [p.done]);
 
   const cats = state.cats || CATS;
   const gearById = useMemo(() => Object.fromEntries(state.gear.map((g) => [g.id, g])), [state.gear]);
@@ -503,23 +675,43 @@ function ListDetail({ list, state, mutate, onClose }) {
     });
   }
 
-  function setPrep(target, prep) {
-    if (target.kind === 'item') {
-      patchItem(target.id, (x) => {
-        if (prep) x.prep = prep;
-        else delete x.prep;
-      });
-    } else {
-      patchExtra(target.id, (x) => {
-        if (prep) x.prep = prep;
-        else delete x.prep;
-      });
-    }
+  function applyItemEdit(target, { prep, note }) {
+    const apply = (x) => {
+      if (prep) x.prep = prep;
+      else delete x.prep;
+      x.note = note;
+    };
+    if (target.kind === 'item') patchItem(target.id, apply);
+    else patchExtra(target.id, apply);
   }
+
+  function removeFromList(target) {
+    mutate((s) => {
+      const l = s.lists.find((x) => x.id === list.id);
+      if (target.kind === 'item') l.items = l.items.filter((x) => x.gearId !== target.id);
+      else l.extras = (l.extras || []).filter((x) => x.id !== target.id);
+      return s;
+    });
+  }
+
+  const countdown = countdownLabel(list.departure);
+  const range = formatDateRange(list.departure, list.returnDate);
+  const days = tripDays(list.departure, list.returnDate);
+  const metaBits = [];
+  if (list.destination) metaBits.push(`📍 ${list.destination}`);
+  if (range) metaBits.push(`🗓️ ${range}${days ? ` (${days}d)` : ''}`);
+  if ((list.people || 1) > 1) metaBits.push(`👥 ${list.people} personen`);
 
   return (
     <div className="page">
+      {celebrate && <Confetti />}
       <div className="card">
+        {metaBits.length > 0 && (
+          <div className="listdetail-meta">
+            {metaBits.join(' · ')}
+            {countdown && <span className="badge countdown" style={{ marginLeft: 8 }}>{countdown}</span>}
+          </div>
+        )}
         <div className="row">
           <div className="grow">
             <b>
@@ -646,13 +838,16 @@ function ListDetail({ list, state, mutate, onClose }) {
                 >
                   {it.packed ? '✓' : ''}
                 </button>
-                <span className="name">{gear?.name || '(verwijderd item)'}</span>
-                <PrepBadge
-                  it={it}
-                  editMode={editMode}
-                  onToggleDone={() => patchItem(it.gearId, (x) => (x.prep.done = !x.prep.done))}
-                  onEdit={() => setPrepEditing({ kind: 'item', id: it.gearId, current: it.prep, name: gear?.name })}
-                />
+                <div className="itemnamebox">
+                  <span className="name">{gear?.name || '(verwijderd item)'}</span>
+                  {it.note && <div className="itemnote">💬 {it.note}</div>}
+                </div>
+                {!editMode && (
+                  <PrepBadge
+                    it={it}
+                    onToggleDone={() => patchItem(it.gearId, (x) => (x.prep.done = !x.prep.done))}
+                  />
+                )}
                 {it.skip ? (
                   <span className="badge off">niet mee</span>
                 ) : (
@@ -665,16 +860,10 @@ function ListDetail({ list, state, mutate, onClose }) {
                 {editMode ? (
                   <button
                     className="iconbtn"
-                    title="Uit lijstje halen"
-                    onClick={() =>
-                      mutate((s) => {
-                        const l = s.lists.find((x) => x.id === list.id);
-                        l.items = l.items.filter((x) => x.gearId !== it.gearId);
-                        return s;
-                      })
-                    }
+                    title="Bewerken (vooraf, notitie, weghalen)"
+                    onClick={() => setItemEditing({ kind: 'item', id: it.gearId, item: it, name: gear?.name || '(verwijderd)' })}
                   >
-                    ✕
+                    ✏️
                   </button>
                 ) : (
                   <button
@@ -712,13 +901,16 @@ function ListDetail({ list, state, mutate, onClose }) {
               >
                 {it.packed ? '✓' : ''}
               </button>
-              <span className="name">{it.name}</span>
-              <PrepBadge
-                it={it}
-                editMode={editMode}
-                onToggleDone={() => patchExtra(it.id, (x) => (x.prep.done = !x.prep.done))}
-                onEdit={() => setPrepEditing({ kind: 'extra', id: it.id, current: it.prep, name: it.name })}
-              />
+              <div className="itemnamebox">
+                <span className="name">{it.name}</span>
+                {it.note && <div className="itemnote">💬 {it.note}</div>}
+              </div>
+              {!editMode && (
+                <PrepBadge
+                  it={it}
+                  onToggleDone={() => patchExtra(it.id, (x) => (x.prep.done = !x.prep.done))}
+                />
+              )}
               <span className="qty">
                 <button onClick={() => patchExtra(it.id, (x) => (x.qty = Math.max(1, x.qty - 1)))}>−</button>
                 <span>{it.qty}</span>
@@ -727,16 +919,10 @@ function ListDetail({ list, state, mutate, onClose }) {
               {editMode && (
                 <button
                   className="iconbtn"
-                  title="Uit lijstje halen"
-                  onClick={() =>
-                    mutate((s) => {
-                      const l = s.lists.find((x) => x.id === list.id);
-                      l.extras = (l.extras || []).filter((x) => x.id !== it.id);
-                      return s;
-                    })
-                  }
+                  title="Bewerken (vooraf, notitie, weghalen)"
+                  onClick={() => setItemEditing({ kind: 'extra', id: it.id, item: it, name: it.name })}
                 >
-                  ✕
+                  ✏️
                 </button>
               )}
             </div>
@@ -749,14 +935,18 @@ function ListDetail({ list, state, mutate, onClose }) {
       </button>
 
       {picking && <Picker list={list} state={state} mutate={mutate} onClose={() => setPicking(false)} />}
-      {prepEditing && (
-        <PrepSheet
-          name={prepEditing.name}
-          current={prepEditing.current}
-          onClose={() => setPrepEditing(null)}
-          onSave={(prep) => {
-            setPrep(prepEditing, prep);
-            setPrepEditing(null);
+      {itemEditing && (
+        <ItemSheet
+          name={itemEditing.name}
+          item={itemEditing.item}
+          onClose={() => setItemEditing(null)}
+          onSave={(data) => {
+            applyItemEdit(itemEditing, data);
+            setItemEditing(null);
+          }}
+          onDelete={() => {
+            removeFromList(itemEditing);
+            setItemEditing(null);
           }}
         />
       )}
@@ -764,11 +954,10 @@ function ListDetail({ list, state, mutate, onClose }) {
         <ListForm
           initial={list}
           onClose={() => setEditing(false)}
-          onSave={(name, emoji) => {
+          onSave={(meta) => {
             mutate((s) => {
               const l = s.lists.find((x) => x.id === list.id);
-              l.name = name;
-              l.emoji = emoji;
+              Object.assign(l, meta);
               return s;
             });
             setEditing(false);
@@ -1270,20 +1459,40 @@ function OthersView({ myEmail, mutate, onCopied }) {
 
 /* ================= Sheet (modal) ================= */
 
-function PrepBadge({ it, editMode, onToggleDone, onEdit }) {
-  if (editMode) {
-    return (
-      <button
-        className={`prepbadge ${it.prep ? '' : 'empty'}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onEdit();
-        }}
-      >
-        {it.prep ? `${prepEmoji(it.prep.label)} ${it.prep.label} ✏️` : '+ vooraf'}
-      </button>
-    );
-  }
+function Confetti() {
+  const pieces = useMemo(() => {
+    const colors = ['#f44', '#ffd54a', '#48d68a', '#4a9cf2', '#d864e8', '#f8a14b'];
+    return Array.from({ length: 70 }, (_, i) => ({
+      i,
+      left: Math.random() * 100,
+      bg: colors[i % colors.length],
+      delay: Math.random() * 0.6,
+      duration: 1.6 + Math.random() * 1.4,
+      rotateTo: 360 + Math.random() * 720,
+      driftX: (Math.random() - 0.5) * 80,
+    }));
+  }, []);
+  return (
+    <div className="confetti" aria-hidden>
+      {pieces.map((p) => (
+        <div
+          key={p.i}
+          className="piece"
+          style={{
+            left: `${p.left}%`,
+            background: p.bg,
+            animationDelay: `${p.delay}s`,
+            animationDuration: `${p.duration}s`,
+            '--drift': `${p.driftX}px`,
+            '--rotate': `${p.rotateTo}deg`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function PrepBadge({ it, onToggleDone }) {
   if (!it.prep || it.skip || it.packed) return null;
   return (
     <button
@@ -1299,43 +1508,62 @@ function PrepBadge({ it, editMode, onToggleDone, onEdit }) {
   );
 }
 
-function PrepSheet({ name, current, onSave, onClose }) {
-  const [label, setLabel] = useState(current?.label || '');
+function ItemSheet({ name, item, onSave, onDelete, onClose }) {
+  const [label, setLabel] = useState(item.prep?.label || '');
+  const [note, setNote] = useState(item.note || '');
   return (
-    <Sheet title={`Vooraf — ${name}`} onClose={onClose}>
-      <p className="muted">Wat moet je vóór de vakantie nog voor dit item regelen?</p>
+    <Sheet title={name} onClose={onClose}>
+      <label className="formlabel">📝 Vooraf te doen</label>
       <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
         {PREP_PRESETS.map((p) => (
           <button
             key={p}
             className={`btn small ${label === p ? '' : 'secondary'}`}
-            onClick={() => setLabel(p)}
+            onClick={() => setLabel(label === p ? '' : p)}
           >
             {prepEmoji(p)} {p}
           </button>
         ))}
       </div>
-      <div style={{ height: 10 }} />
+      <div style={{ height: 8 }} />
       <input
         className="input"
-        placeholder="Of typ iets anders… (bijv. Boeken, Bellen)"
+        placeholder="Of typ iets anders…"
         value={label}
         onChange={(e) => setLabel(e.target.value)}
       />
-      <div style={{ height: 14 }} />
+
+      <div className="formsection">
+        <label className="formlabel">💬 Notitie</label>
+        <textarea
+          className="input"
+          rows={3}
+          placeholder="Bijv. 'in la naast bed', 'oplader in zwarte tas', 'paspoort verloopt 2027'"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </div>
+
+      <div style={{ height: 16 }} />
       <div className="row">
         <button
           className="btn grow"
-          disabled={!label.trim()}
-          onClick={() =>
-            onSave({ label: label.trim(), done: current?.done && current.label === label.trim() ? true : false })
-          }
+          onClick={() => {
+            const cleanLabel = label.trim();
+            const newPrep = cleanLabel
+              ? {
+                  label: cleanLabel,
+                  done: item.prep?.label === cleanLabel ? !!item.prep?.done : false,
+                }
+              : null;
+            onSave({ prep: newPrep, note: note.trim() });
+          }}
         >
           Opslaan
         </button>
-        {current && (
-          <button className="btn small danger" onClick={() => onSave(null)}>
-            Wissen
+        {onDelete && (
+          <button className="btn small danger" onClick={onDelete}>
+            🗑 Uit lijstje
           </button>
         )}
       </div>
