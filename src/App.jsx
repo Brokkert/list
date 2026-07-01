@@ -39,6 +39,9 @@ function migrate(s) {
       }
     }
   }
+  for (const g of s.gear || []) {
+    if (g.location == null) g.location = '';
+  }
   for (const l of s.lists || []) {
     if (l.destination == null) l.destination = '';
     if (l.departure == null) l.departure = '';
@@ -808,14 +811,29 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
     });
   }
 
-  function applyItemEdit(target, { prep, note }) {
-    const apply = (x) => {
-      if (prep) x.prep = prep;
-      else delete x.prep;
-      x.note = note;
-    };
-    if (target.kind === 'item') patchItem(target.id, apply);
-    else patchExtra(target.id, apply);
+  function applyItemEdit(target, { prep, note, location }) {
+    if (target.kind === 'item') {
+      mutate((s) => {
+        const l = s.lists.find((x) => x.id === list.id);
+        const it = l.items.find((x) => x.gearId === target.id);
+        if (it) {
+          if (prep) it.prep = prep;
+          else delete it.prep;
+          it.note = note;
+        }
+        if (location != null) {
+          const g = s.gear.find((x) => x.id === target.id);
+          if (g) g.location = location;
+        }
+        return s;
+      });
+    } else {
+      patchExtra(target.id, (x) => {
+        if (prep) x.prep = prep;
+        else delete x.prep;
+        x.note = note;
+      });
+    }
   }
 
   function moveItemInCat(gearId, dir) {
@@ -1027,6 +1045,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
                 </button>
                 <div className="itemnamebox">
                   <span className="name">{gear?.name || '(verwijderd item)'}</span>
+                  {gear?.location && <div className="itemnote">📍 {gear.location}</div>}
                   {it.note && <div className="itemnote">💬 {it.note}</div>}
                 </div>
                 {!editMode && (
@@ -1165,6 +1184,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
         <ItemSheet
           name={itemEditing.name}
           item={itemEditing.item}
+          gear={itemEditing.kind === 'item' ? gearById[itemEditing.id] : null}
           onClose={() => setItemEditing(null)}
           onSave={(data) => {
             applyItemEdit(itemEditing, data);
@@ -1383,7 +1403,10 @@ function BakView({ state, mutate }) {
           </h3>
           {items.map((g) => (
             <div key={g.id} className="itemrow">
-              <span className="name">{g.name}</span>
+              <div className="itemnamebox">
+                <span className="name">{g.name}</span>
+                {g.location && <div className="itemnote">📍 {g.location}</div>}
+              </div>
               {usage[g.id] ? <span className="badge">in {usage[g.id]} lijstje{usage[g.id] > 1 ? 's' : ''}</span> : null}
               <button className="iconbtn" title="Bewerken" onClick={() => setEditId(g.id)}>
                 ✏️
@@ -1417,11 +1440,12 @@ function BakView({ state, mutate }) {
           item={editItem}
           cats={cats}
           onClose={() => setEditId(null)}
-          onSave={(nm, c) => {
+          onSave={(nm, c, location) => {
             mutate((s) => {
               const g = s.gear.find((x) => x.id === editItem.id);
               g.name = nm;
               g.cat = c;
+              g.location = location;
               return s;
             });
             setEditId(null);
@@ -1494,6 +1518,7 @@ function BakView({ state, mutate }) {
 function GearForm({ item, cats, onSave, onClose }) {
   const [name, setName] = useState(item.name);
   const [cat, setCat] = useState(item.cat);
+  const [location, setLocation] = useState(item.location || '');
   return (
     <Sheet title="Item bewerken" onClose={onClose}>
       <input className="input" value={name} autoFocus onChange={(e) => setName(e.target.value)} />
@@ -1505,8 +1530,17 @@ function GearForm({ item, cats, onSave, onClose }) {
           </option>
         ))}
       </select>
+      <div className="formsection">
+        <label className="formlabel">📍 Waar ligt het?</label>
+        <input
+          className="input"
+          placeholder="Bijv. la naast bed, kelderkast, zwarte reistas…"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+        />
+      </div>
       <div style={{ height: 14 }} />
-      <button className="btn" style={{ width: '100%' }} disabled={!name.trim()} onClick={() => onSave(name.trim(), cat)}>
+      <button className="btn" style={{ width: '100%' }} disabled={!name.trim()} onClick={() => onSave(name.trim(), cat, location.trim())}>
         Opslaan
       </button>
     </Sheet>
@@ -1811,9 +1845,10 @@ function PrepBadge({ it, onToggleDone }) {
   );
 }
 
-function ItemSheet({ name, item, onSave, onDelete, onClose }) {
+function ItemSheet({ name, item, gear, onSave, onDelete, onClose }) {
   const [label, setLabel] = useState(item.prep?.label || '');
   const [note, setNote] = useState(item.note || '');
+  const [location, setLocation] = useState(gear?.location || '');
   return (
     <Sheet title={name} onClose={onClose}>
       <label className="formlabel">📝 Vooraf te doen</label>
@@ -1836,12 +1871,24 @@ function ItemSheet({ name, item, onSave, onDelete, onClose }) {
         onChange={(e) => setLabel(e.target.value)}
       />
 
+      {gear && (
+        <div className="formsection">
+          <label className="formlabel">📍 Waar ligt het? <span className="muted" style={{ fontWeight: 500 }}>(reist mee naar elk lijstje)</span></label>
+          <input
+            className="input"
+            placeholder="Bijv. la naast bed, kelderkast, zwarte reistas…"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
+        </div>
+      )}
+
       <div className="formsection">
-        <label className="formlabel">💬 Notitie</label>
+        <label className="formlabel">💬 Notitie <span className="muted" style={{ fontWeight: 500 }}>(alleen dit lijstje)</span></label>
         <textarea
           className="input"
           rows={3}
-          placeholder="Bijv. 'in la naast bed', 'oplader in zwarte tas', 'paspoort verloopt 2027'"
+          placeholder="Bijv. 'voor Marlou', 'paspoort verloopt 2027'"
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
@@ -1859,7 +1906,7 @@ function ItemSheet({ name, item, onSave, onDelete, onClose }) {
                   done: item.prep?.label === cleanLabel ? !!item.prep?.done : false,
                 }
               : null;
-            onSave({ prep: newPrep, note: note.trim() });
+            onSave({ prep: newPrep, note: note.trim(), location: gear ? location.trim() : null });
           }}
         >
           Opslaan
@@ -2205,10 +2252,17 @@ function VertrekModus({ list, gearById, patchItem, patchExtra, onClose }) {
   const queue = useMemo(() => {
     const out = [];
     for (const it of list.items) {
-      if (!it.packed && !it.skip) out.push({ kind: 'item', id: it.gearId, ref: it, name: gearById[it.gearId]?.name || '(verwijderd)' });
+      if (!it.packed && !it.skip)
+        out.push({
+          kind: 'item',
+          id: it.gearId,
+          ref: it,
+          name: gearById[it.gearId]?.name || '(verwijderd)',
+          gear: gearById[it.gearId],
+        });
     }
     for (const it of list.extras || []) {
-      if (!it.packed && !it.skip) out.push({ kind: 'extra', id: it.id, ref: it, name: it.name });
+      if (!it.packed && !it.skip) out.push({ kind: 'extra', id: it.id, ref: it, name: it.name, gear: null });
     }
     return out;
   }, [list.items, list.extras, gearById]);
@@ -2275,6 +2329,7 @@ function VertrekModus({ list, gearById, patchItem, patchExtra, onClose }) {
         </div>
         <div className="vmodus-name">{cur.name}</div>
         {cur.ref.qty > 1 && <div className="muted vmodus-qty">× {cur.ref.qty}</div>}
+        {cur.gear?.location && <div className="vmodus-location">📍 {cur.gear.location}</div>}
         {cur.ref.note && <div className="itemnote vmodus-note">💬 {cur.ref.note}</div>}
         {cur.ref.prep && !cur.ref.prep.done && (
           <div className="vmodus-prepwarn">

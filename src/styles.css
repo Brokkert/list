@@ -426,6 +426,17 @@ textarea.input {
   margin: 8px auto 12px;
   max-width: 320px;
 }
+.vmodus-location {
+  display: inline-block;
+  background: #e3f3ee;
+  color: var(--accent);
+  border-radius: 12px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 8px auto 4px;
+}
+[data-theme='dark'] .vmodus-location { background: #1c2c28; color: var(--accent); }
 .vmodus-prepwarn {
   background: #fff4d6;
   color: #8a5a00;
