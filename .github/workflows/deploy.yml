@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, claude/vacation-packing-lists-2g55ue]
+    branches: [main]
   workflow_dispatch:
 
 permissions:

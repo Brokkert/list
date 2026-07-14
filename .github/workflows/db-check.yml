@@ -1,10 +1,9 @@
 name: DB check
 
-# Diagnose: test de Supabase REST API vanuit Actions (de tabel, anon-rechten
-# en bestaande rijen). Handmatig of bij push op de dev-branch.
+# Diagnostic: exercises the Supabase REST API from Actions (table access,
+# anon permissions, existing rows). Manual trigger only, so it doesn't
+# produce red runs on every push while the project happens to be paused.
 on:
-  push:
-    branches: [claude/vacation-packing-lists-2g55ue]
   workflow_dispatch:
 
 jobs:
