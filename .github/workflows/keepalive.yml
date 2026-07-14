@@ -1,19 +1,45 @@
 name: Supabase keepalive
 
-# Gratis Supabase-projecten pauzeren na ~1 week zonder verkeer.
-# Deze ping om de 3 dagen houdt het project wakker.
+# Supabase Free pauzeert projecten bij "onvoldoende" databaseactiviteit;
+# de docs noemen als drempel "a few user requests to the database each day".
+# Daarom: dagelijks, en met een échte schrijf-actie (upsert + delete) in
+# plaats van alleen een read — dat is de best gedocumenteerde aanpak, al
+# geeft Supabase nergens garanties over wat precies meetelt.
+#
+# Let op: GitHub schakelt scheduled workflows uit na 60 dagen zonder
+# repo-activiteit. Als de paklijst-app dan zelf ook niet gebruikt wordt,
+# kan het project alsnog pauzeren.
 on:
   schedule:
-    - cron: '17 3 */3 * *'
+    - cron: '23 5 * * *'
   workflow_dispatch:
+
+env:
+  SUPABASE_URL: https://anglxcniiktoenoqapqz.supabase.co
+  SUPABASE_KEY: sb_publishable_qyGsqcHIofui-1rI0WZadQ_cb91iv26
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST API
+      - name: Read (select)
         run: |
-          curl -sf "https://anglxcniiktoenoqapqz.supabase.co/rest/v1/paklijst_shared?select=id&limit=1" \
-            -H "apikey: sb_publishable_qyGsqcHIofui-1rI0WZadQ_cb91iv26" \
-            -H "Authorization: Bearer sb_publishable_qyGsqcHIofui-1rI0WZadQ_cb91iv26" \
+          curl -sf "$SUPABASE_URL/rest/v1/paklijst_shared?select=id&limit=1" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -o /dev/null
+      - name: Write (upsert keepalive-rij)
+        run: |
+          curl -sf -X POST "$SUPABASE_URL/rest/v1/paklijst_shared" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates" \
+            -d "{\"id\":\"paklijst:keepalive\",\"state\":\"{\\\"ping\\\":\\\"$(date -u +%FT%TZ)\\\"}\"}" \
+            -o /dev/null
+      - name: Delete (opruimen keepalive-rij)
+        run: |
+          curl -sf -X DELETE "$SUPABASE_URL/rest/v1/paklijst_shared?id=eq.paklijst:keepalive" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
             -o /dev/null
