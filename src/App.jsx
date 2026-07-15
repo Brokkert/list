@@ -298,6 +298,10 @@ export default function App() {
 
     const unsub = subscribeProfile(slug, (remoteState) => {
       const rs = migrate(remoteState);
+      // Eigen echo's en verlate/oudere updates nooit over verse lokale
+      // wijzigingen heen laten gaan: alleen toepassen als echt nieuwer.
+      const local = stateRef.current;
+      if (local?.updatedAt && rs.updatedAt && rs.updatedAt <= local.updatedAt) return;
       setState(rs);
       localStorage.setItem(cacheKey(slug), JSON.stringify(rs));
     });

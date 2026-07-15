@@ -90,18 +90,22 @@ export function onStatus(fn) {
   return () => statusListeners.delete(fn);
 }
 
+let inflight = false;
+
 async function flushSave() {
-  if (!pending) return;
-  const { slug, state } = pending;
+  if (!pending || inflight) return;
+  const job = pending;
+  inflight = true;
   const updated_at = new Date().toISOString();
   let error = null;
   try {
     ({ error } = await supabase
       .from(TABLE)
-      .upsert({ id: keyFor(slug), state: JSON.stringify(state), updated_at }, { onConflict: 'id' }));
+      .upsert({ id: keyFor(job.slug), state: JSON.stringify(job.state), updated_at }, { onConflict: 'id' }));
   } catch (e) {
     error = e;
   }
+  inflight = false;
   if (error) {
     console.warn('[paklijst] save error:', error.message);
     lastError = error.message;
@@ -110,11 +114,18 @@ async function flushSave() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(flushSave, 15000);
   } else {
-    pending = null;
     lastSavedUpdatedAt = updated_at;
     lastKnownUpdatedAt = updated_at;
     lastError = null;
-    setStatus('online');
+    if (pending === job) {
+      // niks nieuws binnengekomen tijdens het opslaan
+      pending = null;
+      setStatus('online');
+    } else {
+      // er staat alweer een nieuwere state klaar: direct doorsparen
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(flushSave, 100);
+    }
   }
 }
 
