@@ -527,9 +527,8 @@ function ListsView({ state, mutate, onOpen }) {
         const days = tripDays(list.departure, list.returnDate);
         const metaBits = [];
         if (list.destination) metaBits.push(`📍 ${list.destination}`);
-        if (range) metaBits.push(`🗓️ ${range}`);
+        if (range) metaBits.push(`🗓️ ${range}${days ? ` (${days}d)` : ''}`);
         if ((list.people || 1) > 1) metaBits.push(`👥 ${list.people}`);
-        if (days) metaBits.push(`${days}d`);
         const cval = colorValue(list.color);
         return (
           <div
@@ -542,18 +541,16 @@ function ListsView({ state, mutate, onOpen }) {
               <span style={{ fontSize: 26 }}>{list.emoji}</span>
               <div className="grow">
                 <div className="title">{list.name}</div>
-                {metaBits.length > 0 && <div className="muted listmeta">{metaBits.join(' · ')}</div>}
-                <div className="muted">
-                  {p.packed}/{p.toPack} ingepakt
-                  {p.skipped ? ` · ${p.skipped} niet mee` : ''}
-                  {p.pendingPrep ? ` · 📝 ${p.pendingPrep} te doen vooraf` : ''}
-                  {list.note ? ` · ${list.note}` : ''}
-                </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                {p.done && <span className="badge">klaar ✓</span>}
-                {countdown && <span className="badge countdown">{countdown}</span>}
-              </div>
+              {p.done && <span className="badge">klaar ✓</span>}
+              {countdown && <span className="badge countdown">{countdown}</span>}
+            </div>
+            {metaBits.length > 0 && <div className="muted listmeta">{metaBits.join(' · ')}</div>}
+            <div className="muted listmeta">
+              {p.packed}/{p.toPack} ingepakt
+              {p.skipped ? ` · ${p.skipped} niet mee` : ''}
+              {p.pendingPrep ? ` · 📝 ${p.pendingPrep} vooraf` : ''}
+              {list.note ? ` · ${list.note}` : ''}
             </div>
             <div className={`progress${p.done ? ' done' : ''}`}>
               <div style={{ width: `${p.pct}%` }} />

@@ -279,7 +279,7 @@ textarea.input {
   min-height: 70px;
 }
 
-.listmeta { font-size: 12px; margin-top: 2px; }
+.listmeta { font-size: 12px; margin-top: 6px; line-height: 1.5; }
 .listdetail-meta {
   display: flex;
   flex-wrap: wrap;
