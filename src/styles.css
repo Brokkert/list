@@ -281,9 +281,13 @@ textarea.input {
 
 .listmeta { font-size: 12px; margin-top: 2px; }
 .listdetail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
   font-size: 12px;
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .badge.countdown {

@@ -872,7 +872,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
   const metaBits = [];
   if (list.destination) metaBits.push(`📍 ${list.destination}`);
   if (range) metaBits.push(`🗓️ ${range}${days ? ` (${days}d)` : ''}`);
-  if ((list.people || 1) > 1) metaBits.push(`👥 ${list.people} personen`);
+  if ((list.people || 1) > 1) metaBits.push(`👥 ${list.people}`);
 
   return (
     <div className="page">
@@ -880,8 +880,8 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
       <div className="card">
         {metaBits.length > 0 && (
           <div className="listdetail-meta">
-            {metaBits.join(' · ')}
-            {countdown && <span className="badge countdown" style={{ marginLeft: 8 }}>{countdown}</span>}
+            <span>{metaBits.join(' · ')}</span>
+            {countdown && <span className="badge countdown">{countdown}</span>}
           </div>
         )}
         <div className="row">
