@@ -1049,12 +1049,10 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
                   {gear?.location && <div className="itemnote">📍 {gear.location}</div>}
                   {it.note && <div className="itemnote">💬 {it.note}</div>}
                 </div>
-                {!editMode && (
-                  <PrepBadge
-                    it={it}
-                    onToggleDone={() => patchItem(it.gearId, (x) => (x.prep.done = !x.prep.done))}
-                  />
-                )}
+                <PrepBadge
+                  it={it}
+                  onToggleDone={() => patchItem(it.gearId, (x) => (x.prep.done = !x.prep.done))}
+                />
                 {it.skip ? (
                   <span className="badge off">niet mee</span>
                 ) : (
@@ -1128,12 +1126,10 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
                 <span className="name">{it.name}</span>
                 {it.note && <div className="itemnote">💬 {it.note}</div>}
               </div>
-              {!editMode && (
-                <PrepBadge
-                  it={it}
-                  onToggleDone={() => patchExtra(it.id, (x) => (x.prep.done = !x.prep.done))}
-                />
-              )}
+              <PrepBadge
+                it={it}
+                onToggleDone={() => patchExtra(it.id, (x) => (x.prep.done = !x.prep.done))}
+              />
               <span className="qty">
                 <button onClick={() => patchExtra(it.id, (x) => (x.qty = Math.max(1, x.qty - 1)))}>−</button>
                 <span>{it.qty}</span>
