@@ -451,10 +451,12 @@ function Main({ email, state, mutate, onLogout, theme, cycleTheme }) {
           title={STATUS_LABEL[status]}
           onClick={() => {
             const err = getLastError();
+            const build = typeof __BUILD__ !== 'undefined' ? __BUILD__ : 'dev';
             alert(
               `Sync-status: ${STATUS_LABEL[status]}` +
                 (err ? `\n\nLaatste fout: ${err}` : '') +
-                `\n\nJe data staat altijd ook lokaal op dit apparaat opgeslagen; zodra de verbinding werkt wordt alles alsnog gesynchroniseerd.`
+                `\n\nJe data staat altijd ook lokaal op dit apparaat opgeslagen; zodra de verbinding werkt wordt alles alsnog gesynchroniseerd.` +
+                `\n\nApp-versie: ${build}`
             );
           }}
         >
