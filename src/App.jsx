@@ -970,12 +970,12 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
       )}
 
       {editMode && (
-        <div className="row" style={{ flexWrap: 'wrap' }}>
-          <button className="btn small secondary grow" onClick={() => setEditing(true)}>
+        <div className="actiongrid">
+          <button className="btn small secondary" onClick={() => setEditing(true)}>
             ✏️ Reis-info
           </button>
           <button
-            className="btn small secondary grow"
+            className="btn small secondary"
             onClick={() => {
               const nm = prompt('Naam voor template:', list.name);
               if (!nm) return;
@@ -990,7 +990,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
             📋 Bewaar als template
           </button>
           <button
-            className="btn small secondary grow"
+            className="btn small secondary"
             onClick={async () => {
               const url = `${window.location.origin}${window.location.pathname}#share=${slugify(myEmail)}:${list.id}`;
               try {
@@ -1004,7 +1004,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
             🔗 Deel-link kopiëren
           </button>
           <button
-            className="btn small secondary grow"
+            className="btn small secondary"
             onClick={() =>
               mutate((s) => {
                 const l = s.lists.find((x) => x.id === list.id);
@@ -1019,7 +1019,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
             ↺ Vinkjes resetten
           </button>
           <button
-            className="btn small secondary grow"
+            className="btn small secondary"
             onClick={() =>
               mutate((s) => {
                 const copy = structuredClone(s.lists.find((x) => x.id === list.id));
@@ -1038,7 +1038,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
             ⧉ Dupliceren
           </button>
           <button
-            className="btn small danger grow"
+            className="btn small danger"
             onClick={() => {
               if (!confirm(`Lijstje "${list.name}" verwijderen?`)) return;
               mutate((s) => {

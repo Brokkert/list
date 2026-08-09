@@ -239,6 +239,16 @@ input, select { font-family: inherit; font-size: 16px; }
 .prep-banner-row:first-child { border-top: none; }
 .prep-banner-row .name { flex: 1; }
 
+.actiongrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.actiongrid .btn {
+  white-space: normal;
+  line-height: 1.3;
+}
+
 .cat-edit {
   background: none;
   border: none;
