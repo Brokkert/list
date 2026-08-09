@@ -560,9 +560,11 @@ function ListsView({ state, mutate, onOpen }) {
           </div>
         );
       })}
-      <button className="btn ghost" onClick={() => setCreating(true)}>
-        + Nieuw lijstje
-      </button>
+      <div className="fabbar abovetabs">
+        <button className="btn grow" onClick={() => setCreating(true)}>
+          + Nieuw lijstje
+        </button>
+      </div>
       {(state.templates || []).length > 0 && (
         <div>
           <div className="muted" style={{ margin: '8px 4px 4px' }}>📋 Templates</div>
@@ -1468,9 +1470,11 @@ function BakView({ state, mutate }) {
         </div>
       ))}
 
-      <button className="btn ghost" onClick={() => setAddingCat(true)}>
-        + Nieuwe categorie
-      </button>
+      <div className="fabbar abovetabs">
+        <button className="btn secondary grow" onClick={() => setAddingCat(true)}>
+          + Nieuwe categorie
+        </button>
+      </div>
 
       {editItem && (
         <GearForm

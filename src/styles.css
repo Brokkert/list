@@ -115,7 +115,7 @@ input, select { font-family: inherit; font-size: 16px; }
 .tabbar button.active { color: var(--accent); font-weight: 700; }
 
 /* ---------- generic ---------- */
-.page { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.page { padding: 16px 16px 96px; display: flex; flex-direction: column; gap: 12px; }
 .card {
   background: var(--card);
   border: 1px solid var(--line);
@@ -256,6 +256,8 @@ input, select { font-family: inherit; font-size: 16px; }
   box-shadow: 0 4px 18px rgba(10, 40, 30, 0.28);
 }
 .fabbar .grow { flex: 0 1 380px; }
+.fabbar.abovetabs { bottom: calc(58px + env(safe-area-inset-bottom)); }
+.fabbar .btn.secondary { background: var(--card); color: var(--accent); border: 1px solid var(--line); }
 
 .actiongrid {
   display: grid;
