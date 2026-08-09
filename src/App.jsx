@@ -933,6 +933,17 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
                     {o.name}
                     {o.qty > 1 ? ` ×${o.qty}` : ''}
                   </span>
+                  <button
+                    className="iconbtn"
+                    title="Hoeft toch niet — vooraf-actie weghalen"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (o.kind === 'item') patchItem(o.id, (x) => delete x.prep);
+                      else patchExtra(o.id, (x) => delete x.prep);
+                    }}
+                  >
+                    ✕
+                  </button>
                 </div>
               ))}
             </div>
@@ -1948,13 +1959,25 @@ function PrepView({ state, mutate }) {
   const groups = {};
   for (const o of open) (groups[o.prep.label] ||= []).push(o);
 
+  function findPrepItem(s, o) {
+    const l = s.lists.find((x) => x.id === o.list.id);
+    return o.kind === 'item'
+      ? l?.items.find((x) => x.gearId === o.gearId)
+      : (l?.extras || []).find((x) => x.id === o.id);
+  }
+
   function markDone(o) {
     mutate((s) => {
-      const l = s.lists.find((x) => x.id === o.list.id);
-      const it = o.kind === 'item'
-        ? l.items.find((x) => x.gearId === o.gearId)
-        : (l.extras || []).find((x) => x.id === o.id);
+      const it = findPrepItem(s, o);
       if (it?.prep) it.prep.done = true;
+      return s;
+    });
+  }
+
+  function removePrep(o) {
+    mutate((s) => {
+      const it = findPrepItem(s, o);
+      if (it) delete it.prep;
       return s;
     });
   }
@@ -1994,6 +2017,13 @@ function PrepView({ state, mutate }) {
               <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                 {o.list.emoji} {o.list.name}
               </span>
+              <button
+                className="iconbtn"
+                title="Hoeft toch niet — vooraf-actie weghalen"
+                onClick={() => removePrep(o)}
+              >
+                ✕
+              </button>
             </div>
           ))}
         </div>
