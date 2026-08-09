@@ -749,6 +749,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
   const [celebrate, setCelebrate] = useState(false);
   const [vertrekModus, setVertrekModus] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  const [zoek, setZoek] = useState('');
   const p = listProgress(list);
   const wasDone = useRef(p.done);
   useEffect(() => {
@@ -762,18 +763,28 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
 
   const cats = state.cats || CATS;
   const gearById = useMemo(() => Object.fromEntries(state.gear.map((g) => [g.id, g])), [state.gear]);
+  const zq = zoek.trim().toLowerCase();
+  const matchesZoek = (name) => !zq || (name || '').toLowerCase().includes(zq);
+
   const grouped = useMemo(() => {
     const known = new Set(cats.map((c) => c.id));
     const groups = [];
     for (const cat of cats) {
       const items = list.items.filter((it) => {
-        const c = gearById[it.gearId]?.cat;
-        return (known.has(c) ? c : 'overig') === cat.id;
+        const g = gearById[it.gearId];
+        const c = g?.cat;
+        if ((known.has(c) ? c : 'overig') !== cat.id) return false;
+        return !zq || (g?.name || '').toLowerCase().includes(zq);
       });
       if (items.length) groups.push({ cat, items });
     }
     return groups;
-  }, [list.items, gearById, cats]);
+  }, [list.items, gearById, cats, zq]);
+
+  const filteredExtras = useMemo(
+    () => (list.extras || []).filter((it) => matchesZoek(it.name)),
+    [list.extras, zq]
+  );
 
   const openPrep = useMemo(() => {
     const out = [];
@@ -933,6 +944,18 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
         <button className="btn" onClick={() => setVertrekModus(true)}>
           🚀 Vertrek-modus ({p.toPack - p.packed} te doen)
         </button>
+      )}
+
+      {list.items.length + (list.extras || []).length > 8 && (
+        <input
+          className="input"
+          placeholder="🔍 Zoeken in dit lijstje…"
+          value={zoek}
+          onChange={(e) => setZoek(e.target.value)}
+        />
+      )}
+      {zq && grouped.length === 0 && filteredExtras.length === 0 && (
+        <div className="empty">Niks gevonden voor “{zoek.trim()}”.</div>
       )}
 
       {editMode && (
@@ -1108,10 +1131,10 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
         </div>
       ))}
 
-      {(list.extras || []).length > 0 && (
+      {filteredExtras.length > 0 && (
         <div className="catsec">
           <h3>✨ Los in dit lijstje</h3>
-          {(list.extras || []).map((it) => (
+          {filteredExtras.map((it) => (
             <div key={it.id} className={`itemrow${it.packed ? ' packed' : ''}${it.skip ? ' skipped' : ''}`}>
               <button
                 className={`check${it.packed ? ' on' : ''}`}
