@@ -264,6 +264,7 @@ input, select { font-family: inherit; font-size: 16px; }
 
 .itemnamebox { flex: 1; min-width: 0; }
 .itemnamebox .name { display: block; }
+.itemnamebox .prepbadge { margin-top: 5px; }
 .itemnote {
   font-size: 12px;
   color: var(--muted);
