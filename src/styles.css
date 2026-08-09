@@ -239,6 +239,24 @@ input, select { font-family: inherit; font-size: 16px; }
 .prep-banner-row:first-child { border-top: none; }
 .prep-banner-row .name { flex: 1; }
 
+.fabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+  z-index: 20;
+  pointer-events: none;
+}
+.fabbar .btn {
+  pointer-events: auto;
+  box-shadow: 0 4px 18px rgba(10, 40, 30, 0.28);
+}
+.fabbar .grow { flex: 0 1 380px; }
+
 .actiongrid {
   display: grid;
   grid-template-columns: 1fr 1fr;

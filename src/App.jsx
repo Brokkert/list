@@ -1189,12 +1189,12 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
         </div>
       )}
 
-      <div className="row">
+      <div className="fabbar">
         <button className="btn grow" onClick={() => setPicking(true)}>
           + Spullen toevoegen
         </button>
-        <button className="btn small secondary" onClick={() => setSuggesting(true)}>
-          💡 Suggesties
+        <button className="btn secondary" title="Suggesties van anderen" onClick={() => setSuggesting(true)}>
+          💡
         </button>
       </div>
 
