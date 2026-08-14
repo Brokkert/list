@@ -1986,7 +1986,7 @@ function ItemSheet({ name, item, gear, onSave, onDelete, onClose }) {
           Opslaan
         </button>
         {onDelete && (
-          <button className="btn small danger" onClick={onDelete}>
+          <button className="btn danger" onClick={onDelete}>
             🗑 Uit lijstje
           </button>
         )}
