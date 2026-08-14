@@ -1466,8 +1466,7 @@ function Picker({ list, state, mutate, initialCat, onClose }) {
 
 function BakView({ state, mutate }) {
   const [q, setQ] = useState('');
-  const [name, setName] = useState('');
-  const [cat, setCat] = useState('overig');
+  const [adding, setAdding] = useState(false); // false | true | cat-id
   const [editId, setEditId] = useState(null);
   const [addingCat, setAddingCat] = useState(false);
   const [editingCat, setEditingCat] = useState(null);
@@ -1483,24 +1482,18 @@ function BakView({ state, mutate }) {
   const grouped = groupByCat(filtered, cats);
   const editItem = state.gear.find((g) => g.id === editId);
 
-  function addItem() {
-    const nm = name.trim();
-    if (!nm) return;
-    if (state.gear.some((g) => g.name.toLowerCase() === nm.toLowerCase())) {
-      alert('Dit item zit al in je Bak.');
-      return;
-    }
-    mutate((s) => {
-      s.gear.push({ id: uid(), name: nm, cat });
-      return s;
+  function openAdd() {
+    let current = null;
+    document.querySelectorAll('[data-baksec]').forEach((el) => {
+      if (el.getBoundingClientRect().top <= 130) current = el.dataset.baksec;
     });
-    setName('');
+    setAdding(current || true);
   }
 
   return (
     <div className="page">
       <div className="card">
-        <div className="title" style={{ marginBottom: 8 }}>
+        <div className="title">
           📦 {state.bakName || 'De Bak'} <span className="muted">({state.gear.length} spullen)</span>
           <button
             className="cat-edit"
@@ -1517,25 +1510,12 @@ function BakView({ state, mutate }) {
             ✏️
           </button>
         </div>
-        <div className="row">
-          <input className="input grow" placeholder="Nieuw item…" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addItem()} />
-          <select className="input" style={{ width: 'auto', padding: '10px 8px' }} value={cat} onChange={(e) => setCat(e.target.value)}>
-            {cats.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.emoji} {c.name}
-              </option>
-            ))}
-          </select>
-          <button className="btn" onClick={addItem} disabled={!name.trim()}>
-            +
-          </button>
-        </div>
       </div>
 
       <input className="input" placeholder="🔍 Zoeken in de Bak…" value={q} onChange={(e) => setQ(e.target.value)} />
 
       {grouped.map(({ cat, items }) => (
-        <div key={cat.id} className="catsec">
+        <div key={cat.id} className="catsec" data-baksec={cat.id}>
           <h3>
             <span className="grow-empty">{cat.emoji} {cat.name}</span>
             <button className="cat-edit" title="Categorie bewerken" onClick={() => setEditingCat(cat)}>
@@ -1573,10 +1553,22 @@ function BakView({ state, mutate }) {
       ))}
 
       <div className="fabbar abovetabs">
-        <button className="btn secondary grow" onClick={() => setAddingCat(true)}>
-          + Nieuwe categorie
+        <button className="btn grow" onClick={openAdd}>
+          + Item toevoegen
+        </button>
+        <button className="btn secondary" title="Nieuwe categorie" onClick={() => setAddingCat(true)}>
+          📁
         </button>
       </div>
+
+      {adding && (
+        <BakAddSheet
+          state={state}
+          mutate={mutate}
+          initialCat={typeof adding === 'string' ? adding : null}
+          onClose={() => setAdding(false)}
+        />
+      )}
 
       {editItem && (
         <GearForm
@@ -1655,6 +1647,111 @@ function BakView({ state, mutate }) {
         />
       )}
     </div>
+  );
+}
+
+function BakAddSheet({ state, mutate, initialCat, onClose }) {
+  const [q, setQ] = useState('');
+  const [cat, setCat] = useState(initialCat || 'overig');
+  const cats = state.cats || CATS;
+  const bakName = state.bakName || 'De Bak';
+
+  const clean = q.trim();
+  const canCreate = clean && !state.gear.some((g) => g.name.toLowerCase() === clean.toLowerCase());
+  const isDup = clean && !canCreate;
+  const matches = clean
+    ? state.gear.filter((g) => g.name.toLowerCase().includes(clean.toLowerCase())).slice(0, 8)
+    : [];
+  const catName = (id) => {
+    const c = cats.find((x) => x.id === id);
+    return c ? `${c.emoji} ${c.name}` : '';
+  };
+
+  function add() {
+    if (!canCreate) return;
+    mutate((s) => {
+      s.gear.push({ id: uid(), name: clean, cat });
+      return s;
+    });
+    setQ('');
+  }
+
+  return (
+    <Sheet title={`Item toevoegen — ${bakName}`} onClose={onClose}>
+      <input
+        className="input"
+        placeholder="Typ een nieuw item…"
+        value={q}
+        autoFocus
+        onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && canCreate) add();
+        }}
+      />
+      {isDup && (
+        <p className="muted" style={{ margin: '8px 4px 0' }}>
+          “{clean}” zit al in je {bakName}.
+        </p>
+      )}
+      {canCreate && (
+        <div className="card" style={{ marginTop: 10 }}>
+          <div className="row" style={{ marginBottom: 8 }}>
+            <div className="grow">
+              Nieuw: <b>{clean}</b>
+            </div>
+            <select
+              className="input"
+              style={{ width: 'auto', padding: '6px 8px' }}
+              value={cat}
+              onChange={(e) => setCat(e.target.value)}
+            >
+              {cats.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.emoji} {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button className="btn small" style={{ width: '100%' }} onClick={add}>
+            📦 Toevoegen (en nog een typen)
+          </button>
+        </div>
+      )}
+      {matches.length > 0 && (
+        <div className="catsec">
+          <h3>Al in je {bakName}</h3>
+          <div className="card" style={{ padding: '2px 12px' }}>
+            {matches.map((g) => (
+              <div key={g.id} className="pickrow" style={{ cursor: 'default' }}>
+                <span className="name">{g.name}</span>
+                <span className="muted" style={{ fontSize: 12 }}>{catName(g.cat)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div style={{ height: 12 }} />
+      {canCreate ? (
+        <div className="row">
+          <button
+            className="btn grow"
+            onClick={() => {
+              add();
+              onClose();
+            }}
+          >
+            📦 “{clean}” toevoegen & klaar
+          </button>
+          <button className="btn small secondary" onClick={onClose}>
+            Sluiten
+          </button>
+        </div>
+      ) : (
+        <button className="btn" style={{ width: '100%' }} onClick={onClose}>
+          Klaar
+        </button>
+      )}
+    </Sheet>
   );
 }
 
