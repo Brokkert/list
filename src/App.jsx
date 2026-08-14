@@ -365,7 +365,7 @@ export default function App() {
 function Login({ onLogin }) {
   const [value, setValue] = useState('');
   const [profiles, setProfiles] = useState(null);
-  const valid = /\S+@\S+\.\S+/.test(value);
+  const valid = value.trim().length >= 2;
 
   useEffect(() => {
     listCloudProfiles()
@@ -377,7 +377,11 @@ function Login({ onLogin }) {
     <div className="login">
       <div className="logo">🧳</div>
       <h1>Paklijst</h1>
-      <p>Eén Bak met al je spullen, lijstjes per vakantie. Log in met alleen je e-mailadres.</p>
+      <p>Eén Bak met al je spullen, lijstjes per vakantie. Kies een gebruikersnaam — geen wachtwoord, geen e-mail.</p>
+      <div className="publicnotice">
+        ⚠️ Alles hier is <b>openbaar</b>: iedereen die de app opent kan álle profielen en
+        lijstjes zien én aanpassen. Gebruik dus geen echte e-mailadressen of privéinfo.
+      </div>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -386,8 +390,10 @@ function Login({ onLogin }) {
       >
         <input
           className="input"
-          type="email"
-          placeholder="jij@voorbeeld.nl"
+          type="text"
+          autoCapitalize="off"
+          autoCorrect="off"
+          placeholder="Gebruikersnaam, bijv. laurens"
           value={value}
           autoFocus
           onChange={(e) => setValue(e.target.value)}

@@ -629,6 +629,16 @@ textarea.input {
 .login .logo { font-size: 56px; text-align: center; }
 .login h1 { text-align: center; margin: 0; }
 .login p { text-align: center; color: var(--muted); margin: 0 0 8px; }
+.publicnotice {
+  background: #fff4d6;
+  border: 1px solid #f0d68a;
+  color: #6d4a00;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+[data-theme='dark'] .publicnotice { background: #3a2f15; border-color: #5a4a1f; color: #ffd97a; }
 
 .badge {
   background: var(--accent-soft);

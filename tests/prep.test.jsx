@@ -16,8 +16,8 @@ describe('Vooraf-actie (prep) toggle-flow', () => {
 
   async function openVoorbeeldlijst() {
     render(<App />);
-    fireEvent.change(screen.getByPlaceholderText('jij@voorbeeld.nl'), {
-      target: { value: 'prep@test.nl' },
+    fireEvent.change(screen.getByPlaceholderText('Gebruikersnaam, bijv. laurens'), {
+      target: { value: 'preptest' },
     });
     fireEvent.click(screen.getByText('Verder →'));
     await waitFor(() => screen.getByText(/Zomervakantie/));

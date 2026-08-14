@@ -18,8 +18,8 @@ describe('Picker: toevoegen via zoeken', () => {
   async function openVoorbeeldlijst() {
     render(<App />);
     // inloggen
-    fireEvent.change(screen.getByPlaceholderText('jij@voorbeeld.nl'), {
-      target: { value: 'test@test.nl' },
+    fireEvent.change(screen.getByPlaceholderText('Gebruikersnaam, bijv. laurens'), {
+      target: { value: 'testje' },
     });
     fireEvent.click(screen.getByText('Verder →'));
     // wacht tot main met voorbeeldlijst er staat
