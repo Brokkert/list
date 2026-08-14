@@ -5,6 +5,7 @@ import {
   loadProfile,
   saveProfileDebounced,
   subscribeProfile,
+  deleteProfile,
   onStatus,
   getStatus,
   getLastError,
@@ -334,6 +335,40 @@ export default function App() {
     setState(null);
   }
 
+  async function renameProfile() {
+    if (!stateRef.current) return;
+    const invoer = prompt('Nieuwe gebruikersnaam:', email);
+    if (!invoer) return;
+    const clean = invoer.trim().toLowerCase();
+    if (clean.length < 2 || clean === email) return;
+    const newSlug = slugify(clean);
+    if (newSlug !== slug) {
+      try {
+        const existing = await loadProfile(newSlug);
+        if (existing) {
+          alert('Die naam is al in gebruik.');
+          return;
+        }
+      } catch {
+        alert('Kan nu niet controleren of die naam vrij is (geen verbinding). Probeer het straks nog eens.');
+        return;
+      }
+    }
+    const oldSlug = slug;
+    const st = { ...stateRef.current, email: clean, updatedAt: new Date().toISOString() };
+    localStorage.setItem(cacheKey(newSlug), JSON.stringify(st));
+    localStorage.setItem(LS_LAST, clean);
+    saveProfileDebounced(newSlug, st);
+    if (newSlug !== oldSlug) {
+      localStorage.removeItem(cacheKey(oldSlug));
+      deleteProfile(oldSlug).catch(() => {});
+      // nog een keer voor het geval een lopende save de oude rij net terugzette
+      setTimeout(() => deleteProfile(oldSlug).catch(() => {}), 8000);
+    }
+    setState(st);
+    setEmail(clean);
+  }
+
   if (share) {
     return (
       <ShareView
@@ -357,7 +392,17 @@ export default function App() {
       </div>
     );
   }
-  return <Main email={email} state={state} mutate={mutate} onLogout={logout} theme={theme} cycleTheme={cycleTheme} />;
+  return (
+    <Main
+      email={email}
+      state={state}
+      mutate={mutate}
+      onLogout={logout}
+      onRename={renameProfile}
+      theme={theme}
+      cycleTheme={cycleTheme}
+    />
+  );
 }
 
 /* ================= Login ================= */
@@ -423,7 +468,7 @@ function Login({ onLogin }) {
 
 /* ================= Main shell ================= */
 
-function Main({ email, state, mutate, onLogout, theme, cycleTheme }) {
+function Main({ email, state, mutate, onLogout, onRename, theme, cycleTheme }) {
   const [tab, setTab] = useState('lijsten');
   const [openListId, setOpenListId] = useState(null);
   const status = useSyncStatus();
@@ -443,7 +488,9 @@ function Main({ email, state, mutate, onLogout, theme, cycleTheme }) {
           ) : (
             '🧳 Paklijst'
           )}
-          <span className="sub">{email}</span>
+          <span className="sub subedit" title="Naam wijzigen" onClick={onRename}>
+            {email} ✏️
+          </span>
         </h1>
         <button
           className="syncdot"
