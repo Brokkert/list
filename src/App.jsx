@@ -53,6 +53,7 @@ function migrate(s) {
     for (const it of l.extras || []) if (it.note == null) it.note = '';
   }
   if (!Array.isArray(s.templates)) s.templates = [];
+  if (!s.bakName) s.bakName = 'De Bak';
   return s;
 }
 
@@ -550,7 +551,8 @@ function Main({ email, state, mutate, onLogout, onRename, theme, cycleTheme }) {
               {prepCount > 0 && <span className="tabdot">{prepCount}</span>}
             </button>
             <button className={tab === 'bak' ? 'active' : ''} onClick={() => setTab('bak')}>
-              <span className="ico">📦</span>De Bak
+              <span className="ico">📦</span>
+              {state.bakName || 'De Bak'}
             </button>
             <button className={tab === 'anderen' ? 'active' : ''} onClick={() => setTab('anderen')}>
               <span className="ico">👥</span>Anderen
@@ -1384,7 +1386,7 @@ function Picker({ list, state, mutate, initialCat, onClose }) {
   }
 
   return (
-    <Sheet title="Spullen uit de Bak" onClose={onClose}>
+    <Sheet title={`Spullen uit ${state.bakName || 'De Bak'}`} onClose={onClose}>
       <input
         className="input"
         placeholder="Zoek of typ iets nieuws…"
@@ -1499,7 +1501,21 @@ function BakView({ state, mutate }) {
     <div className="page">
       <div className="card">
         <div className="title" style={{ marginBottom: 8 }}>
-          📦 De Bak <span className="muted">({state.gear.length} spullen)</span>
+          📦 {state.bakName || 'De Bak'} <span className="muted">({state.gear.length} spullen)</span>
+          <button
+            className="cat-edit"
+            title="Naam wijzigen"
+            onClick={() => {
+              const nm = prompt('Naam voor je spullenbak:', state.bakName || 'De Bak');
+              if (!nm?.trim()) return;
+              mutate((s) => {
+                s.bakName = nm.trim().slice(0, 20);
+                return s;
+              });
+            }}
+          >
+            ✏️
+          </button>
         </div>
         <div className="row">
           <input className="input grow" placeholder="Nieuw item…" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addItem()} />
