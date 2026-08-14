@@ -878,6 +878,17 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
     });
   }
 
+  // Open de picker met de categorie voorgeselecteerd waar je nu naar kijkt:
+  // de laatste categorie-sectie waarvan de bovenkant het (sticky) header-
+  // gebied al gepasseerd is.
+  function openPicker() {
+    let current = null;
+    document.querySelectorAll('[data-catsec]').forEach((el) => {
+      if (el.getBoundingClientRect().top <= 130) current = el.dataset.catsec;
+    });
+    setPicking(current || true);
+  }
+
   const countdown = countdownLabel(list.departure);
   const range = formatDateRange(list.departure, list.returnDate);
   const days = tripDays(list.departure, list.returnDate);
@@ -1063,7 +1074,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
       )}
 
       {grouped.map(({ cat, items }) => (
-        <div key={cat.id} className="catsec">
+        <div key={cat.id} className="catsec" data-catsec={cat.id}>
           <h3>
             {cat.emoji} {cat.name}
           </h3>
@@ -1192,7 +1203,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
       )}
 
       <div className="fabbar">
-        <button className="btn grow" onClick={() => setPicking(true)}>
+        <button className="btn grow" onClick={openPicker}>
           + Spullen toevoegen
         </button>
         <button className="btn secondary" title="Suggesties van anderen" onClick={() => setSuggesting(true)}>
@@ -1200,7 +1211,15 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
         </button>
       </div>
 
-      {picking && <Picker list={list} state={state} mutate={mutate} onClose={() => setPicking(false)} />}
+      {picking && (
+        <Picker
+          list={list}
+          state={state}
+          mutate={mutate}
+          initialCat={typeof picking === 'string' ? picking : null}
+          onClose={() => setPicking(false)}
+        />
+      )}
       {suggesting && (
         <SuggestionsSheet
           list={list}
@@ -1255,11 +1274,25 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
 
 /* ================= Picker: spullen uit de bak kiezen ================= */
 
-function Picker({ list, state, mutate, onClose }) {
+function Picker({ list, state, mutate, initialCat, onClose }) {
   const [q, setQ] = useState('');
-  const [newCat, setNewCat] = useState('overig');
+  const [newCat, setNewCat] = useState(initialCat || 'overig');
   const cats = state.cats || CATS;
   const inList = new Set(list.items.map((i) => i.gearId));
+
+  // Scroll de picker direct naar de categorie waar de gebruiker in de
+  // lijst naar keek toen die op "+ Spullen toevoegen" tikte.
+  useEffect(() => {
+    if (!initialCat) return;
+    const t = setTimeout(() => {
+      const el = document.querySelector(`[data-pickcat="${initialCat}"]`);
+      const body = el?.closest('.sheet-body');
+      if (el && body) {
+        body.scrollTop += el.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
+      }
+    }, 80);
+    return () => clearTimeout(t);
+  }, []);
 
   const filtered = state.gear.filter((g) => g.name.toLowerCase().includes(q.toLowerCase()));
   const grouped = groupByCat(filtered, cats);
@@ -1334,7 +1367,7 @@ function Picker({ list, state, mutate, onClose }) {
         </div>
       )}
       {grouped.map(({ cat, items }) => (
-        <div key={cat.id} className="catsec">
+        <div key={cat.id} className="catsec" data-pickcat={cat.id}>
           <h3>
             {cat.emoji} {cat.name}
           </h3>
