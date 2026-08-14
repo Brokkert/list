@@ -323,7 +323,7 @@ export default function App() {
   }
 
   function login(addr) {
-    const clean = addr.trim().toLowerCase();
+    const clean = addr.trim();
     localStorage.setItem(LS_LAST, clean);
     setState(null);
     setEmail(clean);
@@ -339,7 +339,7 @@ export default function App() {
     if (!stateRef.current) return;
     const invoer = prompt('Nieuwe gebruikersnaam:', email);
     if (!invoer) return;
-    const clean = invoer.trim().toLowerCase();
+    const clean = invoer.trim();
     if (clean.length < 2 || clean === email) return;
     const newSlug = slugify(clean);
     if (newSlug !== slug) {
@@ -1758,7 +1758,7 @@ function OthersView({ myEmail, mutate, onCopied }) {
 
   useEffect(() => {
     listCloudProfiles()
-      .then((p) => setProfiles(p.filter((x) => x.email !== myEmail)))
+      .then((p) => setProfiles(p.filter((x) => x.slug !== slugify(myEmail))))
       .catch((e) => setError(e.message));
   }, [myEmail]);
 
@@ -2128,7 +2128,7 @@ function PrepView({ state, mutate }) {
 
 async function runSuggestions(list, myEmail) {
   const profiles = await listCloudProfiles();
-  const others = profiles.filter((p) => p.email !== myEmail);
+  const others = profiles.filter((p) => p.slug !== slugify(myEmail));
   if (!others.length) return { similar: {}, totalSimilar: 0, all: {}, totalAll: 0 };
   const fullData = await Promise.all(others.map((p) => loadProfile(p.slug).catch(() => null)));
 
