@@ -885,6 +885,18 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
     return g;
   }, [openPrep]);
 
+  const pickupGroups = useMemo(() => {
+    const g = {};
+    for (const it of list.items) {
+      const gear = gearById[it.gearId];
+      if (gear?.location && !it.packed && !it.skip) {
+        (g[gear.location] ||= []).push({ gearId: it.gearId, name: gear.name, qty: it.qty });
+      }
+    }
+    return g;
+  }, [list.items, gearById]);
+  const pickupCount = Object.values(pickupGroups).reduce((n, arr) => n + arr.length, 0);
+
   function patchItem(gearId, fn) {
     mutate((s) => {
       const l = s.lists.find((x) => x.id === list.id);
@@ -1001,9 +1013,11 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
 
       <WeatherInfo destination={list.destination} departure={list.departure} returnDate={list.returnDate} />
 
-      {openPrep.length > 0 && !editMode && (
+      {(openPrep.length > 0 || pickupCount > 0) && !editMode && (
         <div className="card prep-banner">
-          <div className="prep-banner-title">📝 Eerst nog regelen <span className="prep-count">({openPrep.length})</span></div>
+          <div className="prep-banner-title">
+            📝 Eerst nog regelen <span className="prep-count">({openPrep.length + pickupCount})</span>
+          </div>
           <div className="muted prep-banner-sub">Doe dit vóór je gaat inpakken.</div>
           {Object.entries(openPrepGrouped).map(([label, items]) => (
             <div key={label} className="prep-group">
@@ -1029,6 +1043,38 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
                       e.stopPropagation();
                       if (o.kind === 'item') patchItem(o.id, (x) => delete x.prep);
                       else patchExtra(o.id, (x) => delete x.prep);
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          ))}
+          {Object.entries(pickupGroups).map(([loc, items]) => (
+            <div key={loc} className="prep-group">
+              <div className="prep-group-head">📍 {loc}</div>
+              {items.map((o) => (
+                <div
+                  key={o.gearId}
+                  className="prep-banner-row"
+                  onClick={() => patchItem(o.gearId, (x) => (x.packed = true))}
+                >
+                  <button className="check" />
+                  <span className="name">
+                    {o.name}
+                    {o.qty > 1 ? ` ×${o.qty}` : ''}
+                  </span>
+                  <button
+                    className="iconbtn"
+                    title="Locatie weghalen"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      mutate((s) => {
+                        const g2 = s.gear.find((x) => x.id === o.gearId);
+                        if (g2) g2.location = '';
+                        return s;
+                      });
                     }}
                   >
                     ✕
