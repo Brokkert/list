@@ -212,6 +212,12 @@ input, select { font-family: inherit; font-size: 16px; }
   border: 1px dashed var(--line);
   font-weight: 500;
 }
+.prepbadge.loc.open {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: transparent;
+}
+.itemnamebox .prepbadge + .prepbadge { margin-left: 6px; }
 
 .prep-banner {
   background: #fff9e6;

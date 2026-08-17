@@ -197,7 +197,7 @@ function collectLocationPickups(state) {
   for (const list of state.lists) {
     for (const it of list.items) {
       const g = gearById[it.gearId];
-      if (g?.location && !it.packed && !it.skip) {
+      if (g?.location && !it.packed && !it.skip && !it.picked) {
         out.push({
           key: `${list.id}:${it.gearId}`,
           name: g.name,
@@ -889,7 +889,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
     const g = {};
     for (const it of list.items) {
       const gear = gearById[it.gearId];
-      if (gear?.location && !it.packed && !it.skip) {
+      if (gear?.location && !it.packed && !it.skip && !it.picked) {
         (g[gear.location] ||= []).push({ gearId: it.gearId, name: gear.name, qty: it.qty });
       }
     }
@@ -1058,7 +1058,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
                 <div
                   key={o.gearId}
                   className="prep-banner-row"
-                  onClick={() => patchItem(o.gearId, (x) => (x.packed = true))}
+                  onClick={() => patchItem(o.gearId, (x) => (x.picked = true))}
                 >
                   <button className="check" />
                   <span className="name">
@@ -1146,6 +1146,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
                 for (const it of [...l.items, ...(l.extras || [])]) {
                   it.packed = false;
                   it.skip = false;
+                  it.picked = false;
                 }
                 return s;
               })
@@ -1163,6 +1164,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
                 copy.items.forEach((it) => {
                   it.packed = false;
                   it.skip = false;
+                  it.picked = false;
                 });
                 copy.extras = (copy.extras || []).map((it) => ({ ...it, id: uid(), packed: false, skip: false }));
                 s.lists.push(copy);
@@ -1217,26 +1219,11 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
                 </button>
                 <div className="itemnamebox">
                   <span className="name">{gear?.name || '(verwijderd item)'}</span>
-                  {gear?.location && (
-                    <div className="itemnote">
-                      📍 {gear.location}
-                      {editMode && (
-                        <button
-                          className="cat-edit"
-                          title="Locatie weghalen"
-                          onClick={() =>
-                            mutate((s) => {
-                              const g2 = s.gear.find((x) => x.id === it.gearId);
-                              if (g2) g2.location = '';
-                              return s;
-                            })
-                          }
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <LocationBadge
+                    gear={gear}
+                    it={it}
+                    onToggle={() => patchItem(it.gearId, (x) => (x.picked = !x.picked))}
+                  />
                   {it.note && <div className="itemnote">💬 {it.note}</div>}
                   <PrepBadge
                     it={it}
@@ -2155,6 +2142,22 @@ function Confetti() {
   );
 }
 
+function LocationBadge({ gear, it, onToggle }) {
+  if (!gear?.location || it.skip || it.packed) return null;
+  return (
+    <button
+      className={`prepbadge loc ${it.picked ? 'done' : 'open'}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      title={it.picked ? 'Gepakt van z’n plek — tik om terug te zetten' : `Ligt: ${gear.location} — tik als je ’m gepakt hebt`}
+    >
+      {it.picked ? '✓' : '📍'} {gear.location}
+    </button>
+  );
+}
+
 function PrepBadge({ it, onToggleDone }) {
   if (!it.prep || it.skip || it.packed) return null;
   return (
@@ -2260,7 +2263,7 @@ function PrepView({ state, mutate }) {
     mutate((s) => {
       const l = s.lists.find((x) => x.id === o.list.id);
       const it = l?.items.find((x) => x.gearId === o.gearId);
-      if (it) it.packed = true;
+      if (it) it.picked = true;
       return s;
     });
   }
