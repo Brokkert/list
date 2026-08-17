@@ -191,6 +191,27 @@ function collectOpenPrep(state) {
   return out;
 }
 
+function collectLocationPickups(state) {
+  const out = [];
+  const gearById = Object.fromEntries(state.gear.map((g) => [g.id, g]));
+  for (const list of state.lists) {
+    for (const it of list.items) {
+      const g = gearById[it.gearId];
+      if (g?.location && !it.packed && !it.skip) {
+        out.push({
+          key: `${list.id}:${it.gearId}`,
+          name: g.name,
+          qty: it.qty,
+          location: g.location,
+          list,
+          gearId: it.gearId,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 function useSyncStatus() {
   const [status, setStatus] = useState(getStatus());
   useEffect(() => onStatus(setStatus), []);
@@ -1150,7 +1171,26 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
                 </button>
                 <div className="itemnamebox">
                   <span className="name">{gear?.name || '(verwijderd item)'}</span>
-                  {gear?.location && <div className="itemnote">📍 {gear.location}</div>}
+                  {gear?.location && (
+                    <div className="itemnote">
+                      📍 {gear.location}
+                      {editMode && (
+                        <button
+                          className="cat-edit"
+                          title="Locatie weghalen"
+                          onClick={() =>
+                            mutate((s) => {
+                              const g2 = s.gear.find((x) => x.id === it.gearId);
+                              if (g2) g2.location = '';
+                              return s;
+                            })
+                          }
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {it.note && <div className="itemnote">💬 {it.note}</div>}
                   <PrepBadge
                     it={it}
@@ -2166,6 +2206,19 @@ function PrepView({ state, mutate }) {
   const groups = {};
   for (const o of open) (groups[o.prep.label] ||= []).push(o);
 
+  const pickups = collectLocationPickups(state);
+  const pickupGroups = {};
+  for (const o of pickups) (pickupGroups[o.location] ||= []).push(o);
+
+  function markPicked(o) {
+    mutate((s) => {
+      const l = s.lists.find((x) => x.id === o.list.id);
+      const it = l?.items.find((x) => x.gearId === o.gearId);
+      if (it) it.packed = true;
+      return s;
+    });
+  }
+
   function findPrepItem(s, o) {
     const l = s.lists.find((x) => x.id === o.list.id);
     return o.kind === 'item'
@@ -2189,7 +2242,7 @@ function PrepView({ state, mutate }) {
     });
   }
 
-  if (open.length === 0) {
+  if (open.length === 0 && pickups.length === 0) {
     return (
       <div className="page">
         <div className="empty">
@@ -2197,7 +2250,7 @@ function PrepView({ state, mutate }) {
           Niks vooraf te doen.
           <div style={{ marginTop: 10, fontSize: 13 }}>
             Open een lijstje, tik op <b>✏️ bewerk</b> en geef items een vooraf-actie
-            (Kopen, Ophalen, Opzoeken…). Ze verschijnen dan hier als overzicht.
+            (Kopen, Ophalen, Opzoeken…) of een 📍 locatie. Ze verschijnen dan hier als overzicht.
           </div>
         </div>
       </div>
@@ -2235,6 +2288,33 @@ function PrepView({ state, mutate }) {
           ))}
         </div>
       ))}
+
+      {pickups.length > 0 && (
+        <>
+          <p className="muted" style={{ margin: '10px 4px 0' }}>
+            📍 Nog pakken van hun plek — afvinken = gepakt & ingepakt.
+          </p>
+          {Object.entries(pickupGroups).map(([loc, items]) => (
+            <div key={loc} className="catsec">
+              <h3>
+                📍 {loc} <span style={{ opacity: 0.6 }}>({items.length})</span>
+              </h3>
+              {items.map((o) => (
+                <div key={o.key} className="itemrow">
+                  <button className="check" onClick={() => markPicked(o)} />
+                  <span className="name">
+                    {o.name}
+                    {o.qty > 1 ? ` ×${o.qty}` : ''}
+                  </span>
+                  <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                    {o.list.emoji} {o.list.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
