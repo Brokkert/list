@@ -1002,6 +1002,23 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
             </b>{' '}
             <span className="muted">ingepakt{p.skipped ? ` · ${p.skipped} niet mee` : ''}</span>
           </div>
+          {!editMode && (
+            <button
+              className="btn small secondary"
+              title="Deel-link kopiëren (alleen-lezen, met kopieerknop)"
+              onClick={async () => {
+                const url = `${window.location.origin}${window.location.pathname}#share=${slugify(myEmail)}:${list.id}`;
+                try {
+                  await navigator.clipboard.writeText(url);
+                  alert(`Deel-link gekopieerd!\n\n${url}\n\nIedereen met deze link kan dit lijstje bekijken en naar z'n eigen profiel kopiëren.`);
+                } catch {
+                  prompt('Deel-link:', url);
+                }
+              }}
+            >
+              🔗
+            </button>
+          )}
           <button className={`btn small ${editMode ? '' : 'secondary'}`} onClick={() => setEditMode(!editMode)}>
             {editMode ? '✓ klaar' : '✏️ bewerk'}
           </button>
