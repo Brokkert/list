@@ -2639,7 +2639,7 @@ function VertrekModus({ list, gearById, patchItem, patchExtra, onClose }) {
   // Bevroren wachtrij, één keer opgebouwd bij het openen. Live herberekenen
   // liet afgevinkte items uit de rij vallen terwijl de teller ook vooruit
   // ging — netto werd om het andere item overgeslagen.
-  const [queue] = useState(() => {
+  const [queue, setQueue] = useState(() => {
     const out = [];
     for (const it of list.items) {
       if (!it.packed && !it.skip)
@@ -2664,10 +2664,55 @@ function VertrekModus({ list, gearById, patchItem, patchExtra, onClose }) {
     return { all: all.length, packed, skipped };
   }, [list.items, list.extras]);
 
+  // Live status per wachtrij-item (de refs in de wachtrij zijn bevroren).
+  const liveById = useMemo(() => {
+    const m = {};
+    for (const it of list.items) m[`i${it.gearId}`] = it;
+    for (const it of list.extras || []) m[`e${it.id}`] = it;
+    return m;
+  }, [list.items, list.extras]);
+  const liveOf = (o) => liveById[`${o.kind === 'item' ? 'i' : 'e'}${o.id}`];
+
   const [idx, setIdx] = useState(0);
   const cur = queue[idx];
 
   if (!cur) {
+    // Einde van de rit: overgeslagen items zijn nog niet afgehandeld.
+    const remaining = queue.filter((o) => {
+      const live = liveOf(o);
+      return live && !live.packed && !live.skip;
+    });
+    if (remaining.length > 0) {
+      return (
+        <div className="vmodus">
+          <div className="vmodus-card">
+            <div style={{ fontSize: 56 }}>🌀</div>
+            <div className="vmodus-title">
+              Nog {remaining.length} {remaining.length === 1 ? 'item' : 'items'} over
+            </div>
+            <div className="muted" style={{ marginTop: 8 }}>
+              Deze heb je overgeslagen — nog niet ingepakt en niet op "niet mee" gezet.
+            </div>
+            <div className="vmodus-actions">
+              <button
+                className="btn big"
+                onClick={() => {
+                  setQueue(
+                    remaining.map((o) => ({ ...o, ref: liveOf(o) }))
+                  );
+                  setIdx(0);
+                }}
+              >
+                🔁 Nog een rondje ({remaining.length})
+              </button>
+              <button className="btn secondary" onClick={onClose}>
+                Sluiten
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="vmodus">
         <Confetti />
