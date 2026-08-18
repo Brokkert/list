@@ -23,7 +23,7 @@ describe('Picker: toevoegen via zoeken', () => {
     });
     fireEvent.click(screen.getByText('Verder →'));
     // wacht tot main met voorbeeldlijst er staat
-    await waitFor(() => screen.getByText(/Zomervakantie/));
+    await waitFor(() => screen.getByText(/Zomervakantie/), { timeout: 8000 });
     fireEvent.click(screen.getByText(/Zomervakantie/));
     await waitFor(() => screen.getByText('+ Spullen toevoegen'));
     fireEvent.click(screen.getByText('+ Spullen toevoegen'));

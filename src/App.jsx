@@ -2636,8 +2636,10 @@ function ShareView({ share, myEmail, myState, mutate, onClose }) {
 }
 
 function VertrekModus({ list, gearById, patchItem, patchExtra, onClose }) {
-  // Lopen door alle items (bak + extras) die nog niet ingepakt of overgeslagen zijn.
-  const queue = useMemo(() => {
+  // Bevroren wachtrij, één keer opgebouwd bij het openen. Live herberekenen
+  // liet afgevinkte items uit de rij vallen terwijl de teller ook vooruit
+  // ging — netto werd om het andere item overgeslagen.
+  const [queue] = useState(() => {
     const out = [];
     for (const it of list.items) {
       if (!it.packed && !it.skip)
@@ -2653,7 +2655,7 @@ function VertrekModus({ list, gearById, patchItem, patchExtra, onClose }) {
       if (!it.packed && !it.skip) out.push({ kind: 'extra', id: it.id, ref: it, name: it.name, gear: null });
     }
     return out;
-  }, [list.items, list.extras, gearById]);
+  });
 
   const total = useMemo(() => {
     const all = [...list.items, ...(list.extras || [])];

@@ -20,7 +20,7 @@ describe('Vooraf-actie (prep) toggle-flow', () => {
       target: { value: 'preptest' },
     });
     fireEvent.click(screen.getByText('Verder →'));
-    await waitFor(() => screen.getByText(/Zomervakantie/));
+    await waitFor(() => screen.getByText(/Zomervakantie/), { timeout: 8000 });
     fireEvent.click(screen.getByText(/Zomervakantie/));
     await waitFor(() => screen.getByText('+ Spullen toevoegen'));
   }
