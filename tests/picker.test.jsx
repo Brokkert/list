@@ -35,8 +35,8 @@ describe('Picker: toevoegen via zoeken', () => {
     fireEvent.change(screen.getByPlaceholderText('Zoek of typ iets nieuws…'), {
       target: { value: 'Drone' },
     });
-    await waitFor(() => screen.getByText('📦 In Bak + lijstje'));
-    fireEvent.click(screen.getByText('📦 In Bak + lijstje'));
+    await waitFor(() => screen.getByText('📦 In De Bak + lijstje'));
+    fireEvent.click(screen.getByText('📦 In De Bak + lijstje'));
     // item moet nu in de pickerlijst staan, aangevinkt ("in lijstje")
     await waitFor(() => {
       const row = screen.getAllByText('Drone').map((el) => el.closest('.pickrow')).find(Boolean);

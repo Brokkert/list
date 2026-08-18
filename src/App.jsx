@@ -1210,7 +1210,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
       {list.items.length === 0 && (list.extras || []).length === 0 && (
         <div className="empty">
           <span className="big">📦</span>
-          Nog leeg — voeg spullen toe uit je Bak.
+          Nog leeg — voeg spullen toe uit {state.bakName || 'De Bak'}.
         </div>
       )}
 
@@ -1503,7 +1503,7 @@ function Picker({ list, state, mutate, initialCat, onClose }) {
           </div>
           <div className="row">
             <button className="btn small grow" onClick={createAndAdd}>
-              📦 In Bak + lijstje
+              📦 In {state.bakName || 'De Bak'} + lijstje
             </button>
             <button className="btn small secondary grow" onClick={createExtra}>
               ✨ Alleen dit lijstje
@@ -1602,7 +1602,7 @@ function BakView({ state, mutate }) {
         </div>
       </div>
 
-      <input className="input" placeholder="🔍 Zoeken in de Bak…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <input className="input" placeholder={`🔍 Zoeken in ${state.bakName || 'De Bak'}…`} value={q} onChange={(e) => setQ(e.target.value)} />
 
       {grouped.map(({ cat, items }) => (
         <div key={cat.id} className="catsec" data-baksec={cat.id}>
@@ -1627,7 +1627,7 @@ function BakView({ state, mutate }) {
                 title="Verwijderen"
                 onClick={() => {
                   const used = usage[g.id];
-                  if (!confirm(`"${g.name}" uit de Bak gooien?${used ? ` Het wordt ook uit ${used} lijstje(s) gehaald.` : ''}`)) return;
+                  if (!confirm(`"${g.name}" uit ${state.bakName || 'De Bak'} gooien?${used ? ` Het wordt ook uit ${used} lijstje(s) gehaald.` : ''}`)) return;
                   mutate((s) => {
                     s.gear = s.gear.filter((x) => x.id !== g.id);
                     s.lists.forEach((l) => (l.items = l.items.filter((it) => it.gearId !== g.id)));
@@ -2509,7 +2509,7 @@ function SuggestionsSheet({ list, state, myEmail, mutate, onClose }) {
           <div key={name} className="itemrow">
             <span className="name">{name}</span>
             <span className="badge">{pct}%</span>
-            {inBak && <span className="muted" style={{ fontSize: 11 }}>in Bak</span>}
+            {inBak && <span className="muted" style={{ fontSize: 11 }}>in {state.bakName || 'De Bak'}</span>}
             <button className="btn small" onClick={() => addByName(name)}>
               +
             </button>
