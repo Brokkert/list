@@ -2563,7 +2563,7 @@ function ShareView({ share, myEmail, myState, mutate, onClose }) {
       }
       s.lists.push({
         id: uid(),
-        name: `${data.list.name} (van ${share.slug})`,
+        name: `${data.list.name} (van ${data.profile.email || share.slug})`,
         emoji: data.list.emoji || '🧳',
         note: '',
         destination: data.list.destination || '',
@@ -2585,7 +2585,7 @@ function ShareView({ share, myEmail, myState, mutate, onClose }) {
       <header className="header">
         <h1>
           🔗 Gedeeld lijstje
-          <span className="sub">door {share.slug}</span>
+          <span className="sub">door {data?.profile?.email || share.slug}</span>
         </h1>
         <button className="linkbtn" onClick={onClose}>
           {myEmail ? '← terug' : 'sluiten'}
