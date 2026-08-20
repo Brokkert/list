@@ -1,11 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   slugify,
-  listCloudProfiles,
+  getSessionUser,
+  onAuth,
+  signInWithEmail,
+  signOut,
   loadProfile,
   saveProfileDebounced,
   subscribeProfile,
-  deleteProfile,
+  upsertShare,
+  loadShare,
+  legacyLoadProfile,
+  legacyDeleteProfile,
   onStatus,
   getStatus,
   getLastError,
@@ -13,7 +19,6 @@ import {
 import { CATS, uid, seedState } from './seed.js';
 import { fetchWeather, weatherIcon } from './weather.js';
 
-const LS_LAST = 'paklijst:lastEmail';
 const cacheKey = (slug) => `paklijst:cache:${slug}`;
 
 const EMOJIS = ['🌞', '🏖️', '⛷️', '🏂', '🏕️', '🚗', '✈️', '🚆', '🛳️', '🥾', '🎉', '👶', '💼', '🧳'];
@@ -255,14 +260,15 @@ function useTheme() {
 }
 
 function parseShareHash() {
-  const m = window.location.hash.match(/^#share=([^:]+):(.+)$/);
-  return m ? { slug: m[1], listId: m[2] } : null;
+  const m = window.location.hash.match(/^#share=(.+)$/);
+  return m ? m[1] : null;
 }
 
 export default function App() {
-  const [email, setEmail] = useState(() => localStorage.getItem(LS_LAST) || null);
+  const [user, setUser] = useState(undefined); // undefined = sessie nog aan het laden
   const [state, setState] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
   const [theme, cycleTheme] = useTheme();
   const [share, setShare] = useState(() => parseShareHash());
   useEffect(() => {
@@ -273,15 +279,24 @@ export default function App() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const slug = email ? slugify(email) : null;
+  useEffect(() => {
+    getSessionUser().then((u) => setUser((cur) => (cur === undefined ? u : cur)));
+    return onAuth((u) => setUser(u));
+  }, []);
+
+  const uid = user?.id || null;
 
   // Profiel laden: eerst lokale cache (instant), dan cloud, dan realtime volgen.
   useEffect(() => {
-    if (!slug) return;
+    if (!uid) {
+      setState(null);
+      setNeedsSetup(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
 
-    const cached = localStorage.getItem(cacheKey(slug));
+    const cached = localStorage.getItem(cacheKey(uid));
     if (cached) {
       try {
         setState(migrate(JSON.parse(cached)));
@@ -290,112 +305,87 @@ export default function App() {
 
     (async () => {
       try {
-        const remote = await loadProfile(slug);
+        const remote = await loadProfile(uid);
         if (cancelled) return;
         if (remote) {
           const local = stateRef.current;
           if (!local || !local.updatedAt || remote.state.updatedAt >= local.updatedAt) {
             const rs = migrate(remote.state);
             setState(rs);
-            localStorage.setItem(cacheKey(slug), JSON.stringify(rs));
+            localStorage.setItem(cacheKey(uid), JSON.stringify(rs));
           } else {
-            saveProfileDebounced(slug, local);
+            saveProfileDebounced(uid, local);
           }
+        } else if (stateRef.current) {
+          // lokale kopie maar geen cloud-rij: alsnog opslaan
+          saveProfileDebounced(uid, stateRef.current);
         } else {
-          const fresh = stateRef.current || seedState(email);
-          setState(fresh);
-          localStorage.setItem(cacheKey(slug), JSON.stringify(fresh));
-          saveProfileDebounced(slug, fresh);
+          // gloednieuw account: laat kiezen tussen vers beginnen of importeren
+          setNeedsSetup(true);
         }
       } catch (e) {
         console.warn('[paklijst] cloud load mislukt, lokaal verder:', e.message);
-        if (!cancelled && !stateRef.current) {
-          const fresh = seedState(email);
-          setState(fresh);
-          localStorage.setItem(cacheKey(slug), JSON.stringify(fresh));
-        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
 
-    const unsub = subscribeProfile(slug, (remoteState) => {
+    const unsub = subscribeProfile(uid, (remoteState) => {
       const rs = migrate(remoteState);
       // Eigen echo's en verlate/oudere updates nooit over verse lokale
       // wijzigingen heen laten gaan: alleen toepassen als echt nieuwer.
       const local = stateRef.current;
       if (local?.updatedAt && rs.updatedAt && rs.updatedAt <= local.updatedAt) return;
       setState(rs);
-      localStorage.setItem(cacheKey(slug), JSON.stringify(rs));
+      localStorage.setItem(cacheKey(uid), JSON.stringify(rs));
     });
     return () => {
       cancelled = true;
       unsub();
     };
-  }, [slug]);
+  }, [uid]);
 
   function mutate(fn) {
     setState((prev) => {
       const next = fn(structuredClone(prev));
       next.updatedAt = new Date().toISOString();
-      localStorage.setItem(cacheKey(slug), JSON.stringify(next));
-      saveProfileDebounced(slug, next);
+      localStorage.setItem(cacheKey(uid), JSON.stringify(next));
+      saveProfileDebounced(uid, next);
       return next;
     });
   }
 
-  function login(addr) {
-    const clean = addr.trim();
-    localStorage.setItem(LS_LAST, clean);
-    setState(null);
-    setEmail(clean);
-  }
-
-  function logout() {
-    localStorage.removeItem(LS_LAST);
-    setEmail(null);
-    setState(null);
-  }
-
-  async function renameProfile() {
-    if (!stateRef.current) return;
-    const invoer = prompt('Nieuwe gebruikersnaam:', email);
-    if (!invoer) return;
-    const clean = invoer.trim();
-    if (clean.length < 2 || clean === email) return;
-    const newSlug = slugify(clean);
-    if (newSlug !== slug) {
-      try {
-        const existing = await loadProfile(newSlug);
-        if (existing) {
-          alert('Die naam is al in gebruik.');
-          return;
-        }
-      } catch {
-        alert('Kan nu niet controleren of die naam vrij is (geen verbinding). Probeer het straks nog eens.');
-        return;
-      }
-    }
-    const oldSlug = slug;
-    const st = { ...stateRef.current, email: clean, updatedAt: new Date().toISOString() };
-    localStorage.setItem(cacheKey(newSlug), JSON.stringify(st));
-    localStorage.setItem(LS_LAST, clean);
-    saveProfileDebounced(newSlug, st);
-    if (newSlug !== oldSlug) {
-      localStorage.removeItem(cacheKey(oldSlug));
-      deleteProfile(oldSlug).catch(() => {});
-      // nog een keer voor het geval een lopende save de oude rij net terugzette
-      setTimeout(() => deleteProfile(oldSlug).catch(() => {}), 8000);
-    }
+  function adoptState(fresh) {
+    const st = migrate(fresh);
+    st.updatedAt = new Date().toISOString();
+    localStorage.setItem(cacheKey(uid), JSON.stringify(st));
+    saveProfileDebounced(uid, st);
     setState(st);
-    setEmail(clean);
+    setNeedsSetup(false);
+  }
+
+  async function logout() {
+    await signOut();
+    setUser(null);
+    setState(null);
+    setNeedsSetup(false);
+  }
+
+  function renameProfile() {
+    if (!stateRef.current) return;
+    const invoer = prompt('Weergavenaam:', stateRef.current.email || '');
+    if (!invoer?.trim()) return;
+    mutate((s) => {
+      s.email = invoer.trim();
+      return s;
+    });
   }
 
   if (share) {
     return (
       <ShareView
-        share={share}
-        myEmail={email}
+        shareId={share}
+        user={user || null}
         myState={state}
         mutate={mutate}
         onClose={() => {
@@ -405,7 +395,16 @@ export default function App() {
       />
     );
   }
-  if (!email) return <Login onLogin={login} />;
+  if (user === undefined) {
+    return (
+      <div className="login">
+        <div className="logo">🧳</div>
+        <p>Even kijken of je ingelogd bent…</p>
+      </div>
+    );
+  }
+  if (!user) return <Login />;
+  if (needsSetup) return <Onboarding user={user} onAdopt={adoptState} onLogout={logout} />;
   if (!state) {
     return (
       <div className="login">
@@ -416,7 +415,7 @@ export default function App() {
   }
   return (
     <Main
-      email={email}
+      user={user}
       state={state}
       mutate={mutate}
       onLogout={logout}
@@ -427,70 +426,147 @@ export default function App() {
   );
 }
 
-/* ================= Login ================= */
+/* ================= Login (magic-link) ================= */
 
-function Login({ onLogin }) {
+function Login() {
   const [value, setValue] = useState('');
-  const [profiles, setProfiles] = useState(null);
-  const valid = value.trim().length >= 2;
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const valid = /\S+@\S+\.\S+/.test(value);
 
-  useEffect(() => {
-    listCloudProfiles()
-      .then((p) => setProfiles(p.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))))
-      .catch(() => setProfiles([]));
-  }, []);
+  async function submit(e) {
+    e.preventDefault();
+    if (!valid || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await signInWithEmail(value.trim());
+      setSent(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (sent) {
+    return (
+      <div className="login">
+        <div className="logo">📬</div>
+        <h1>Check je mail</h1>
+        <p>
+          We hebben een inloglink gestuurd naar <b>{value.trim()}</b>. Open die op dit
+          apparaat en je bent binnen — geen wachtwoord nodig.
+        </p>
+        <p className="muted">Niks ontvangen? Kijk in je spam, of probeer het over een paar minuten opnieuw (de mailer is traag met versturen bij herhaalde pogingen).</p>
+        <button className="btn secondary" onClick={() => setSent(false)}>
+          Ander e-mailadres
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="login">
       <div className="logo">🧳</div>
       <h1>Paklijst</h1>
-      <p>Eén Bak met al je spullen, lijstjes per vakantie. Kies een gebruikersnaam — geen wachtwoord, geen e-mail.</p>
-      <div className="publicnotice">
-        ⚠️ Alles hier is <b>openbaar</b>: iedereen die de app opent kan álle profielen en
-        lijstjes zien én aanpassen. Gebruik dus geen echte e-mailadressen of privéinfo.
+      <p>Eén Bak met al je spullen, lijstjes per vakantie. Log in met een magic-link — geen wachtwoord.</p>
+      <div className="publicnotice" style={{ background: 'var(--accent-soft)', borderColor: 'transparent', color: 'var(--accent)' }}>
+        🔒 Je data is privé: alleen jij kunt je eigen Bak en lijstjes zien. Alleen lijstjes
+        die je zelf deelt via een deel-link zijn voor anderen zichtbaar.
       </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (valid) onLogin(value);
-        }}
-      >
+      <form onSubmit={submit}>
         <input
           className="input"
-          type="text"
-          autoCapitalize="off"
-          autoCorrect="off"
-          placeholder="Gebruikersnaam, bijv. laurens"
+          type="email"
+          placeholder="jij@voorbeeld.nl"
           value={value}
           autoFocus
           onChange={(e) => setValue(e.target.value)}
         />
         <div style={{ height: 10 }} />
-        <button className="btn" style={{ width: '100%' }} disabled={!valid}>
-          Verder →
+        <button className="btn" style={{ width: '100%' }} disabled={!valid || busy}>
+          {busy ? 'Versturen…' : 'Stuur inloglink →'}
         </button>
       </form>
-      {profiles === null && <p className="muted">Bestaande profielen laden…</p>}
-      {profiles?.length > 0 && (
-        <div>
-          <p className="muted" style={{ textAlign: 'left', margin: '6px 4px' }}>
-            Bestaande profielen:
-          </p>
-          {profiles.map((p) => (
-            <div key={p.slug} className="card tap row" style={{ marginBottom: 6 }} onClick={() => onLogin(p.email)}>
-              <div className="grow">{p.email}</div>
-              <span className="badge">{p.listCount} lijstjes</span>
-            </div>
-          ))}
+      {error && <p className="muted" style={{ color: 'var(--danger)' }}>Mislukt: {error}</p>}
+    </div>
+  );
+}
+
+/* ================= Onboarding (nieuw account) ================= */
+
+function Onboarding({ user, onAdopt, onLogout }) {
+  const [oldName, setOldName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function importLegacy() {
+    const nm = oldName.trim();
+    if (!nm || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const legacy = await legacyLoadProfile(slugify(nm));
+      if (!legacy) {
+        setError(`Geen oud profiel gevonden met de naam "${nm}".`);
+        return;
+      }
+      onAdopt(legacy);
+      if (confirm('Geïmporteerd! Zal ik je oude, openbare profiel-rij nu verwijderen? (aangeraden)')) {
+        legacyDeleteProfile(slugify(nm)).catch(() => {});
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="login">
+      <div className="logo">👋</div>
+      <h1>Welkom!</h1>
+      <p>
+        Ingelogd als <b>{user.email}</b>. Hoe wil je beginnen?
+      </p>
+      <button
+        className="btn"
+        onClick={() => onAdopt(seedState(user.email.split('@')[0]))}
+      >
+        🌱 Start met een verse Bak
+      </button>
+      <div className="card">
+        <div className="title" style={{ marginBottom: 6 }}>📦 Oud profiel importeren</div>
+        <p className="muted" style={{ textAlign: 'left', margin: '0 0 8px' }}>
+          Gebruikte je de app al vóór de accounts? Typ je oude gebruikersnaam; je Bak en
+          lijstjes verhuizen dan naar dit account.
+        </p>
+        <div className="row">
+          <input
+            className="input grow"
+            placeholder="Oude gebruikersnaam"
+            value={oldName}
+            onChange={(e) => setOldName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && importLegacy()}
+          />
+          <button className="btn small" disabled={!oldName.trim() || busy} onClick={importLegacy}>
+            {busy ? '…' : 'Importeer'}
+          </button>
         </div>
-      )}
+        {error && <p className="muted" style={{ color: 'var(--danger)', marginBottom: 0 }}>{error}</p>}
+      </div>
+      <button className="linkbtn" style={{ color: 'var(--muted)' }} onClick={onLogout}>
+        uitloggen
+      </button>
     </div>
   );
 }
 
 /* ================= Main shell ================= */
 
-function Main({ email, state, mutate, onLogout, onRename, theme, cycleTheme }) {
+function Main({ user, state, mutate, onLogout, onRename, theme, cycleTheme }) {
   const [tab, setTab] = useState('lijsten');
   const [openListId, setOpenListId] = useState(null);
   const status = useSyncStatus();
@@ -511,7 +587,7 @@ function Main({ email, state, mutate, onLogout, onRename, theme, cycleTheme }) {
             '🧳 Paklijst'
           )}
           <span className="sub subedit" title="Naam wijzigen" onClick={onRename}>
-            {email} ✏️
+            {state.email || user.email} ✏️
           </span>
         </h1>
         <button
@@ -549,15 +625,13 @@ function Main({ email, state, mutate, onLogout, onRename, theme, cycleTheme }) {
       </header>
 
       {openList ? (
-        <ListDetail list={openList} state={state} mutate={mutate} onClose={() => setOpenListId(null)} myEmail={email} />
+        <ListDetail list={openList} state={state} mutate={mutate} onClose={() => setOpenListId(null)} uid={user.id} />
       ) : tab === 'lijsten' ? (
         <ListsView state={state} mutate={mutate} onOpen={setOpenListId} />
       ) : tab === 'vooraf' ? (
         <PrepView state={state} mutate={mutate} />
-      ) : tab === 'bak' ? (
-        <BakView state={state} mutate={mutate} />
       ) : (
-        <OthersView myEmail={email} mutate={mutate} onCopied={() => setTab('lijsten')} />
+        <BakView state={state} mutate={mutate} />
       )}
 
       {!openList && (
@@ -574,9 +648,6 @@ function Main({ email, state, mutate, onLogout, onRename, theme, cycleTheme }) {
             <button className={tab === 'bak' ? 'active' : ''} onClick={() => setTab('bak')}>
               <span className="ico">📦</span>
               {state.bakName || 'De Bak'}
-            </button>
-            <button className={tab === 'anderen' ? 'active' : ''} onClick={() => setTab('anderen')}>
-              <span className="ico">👥</span>Anderen
             </button>
           </div>
         </nav>
@@ -819,14 +890,13 @@ function ListForm({ initial, onSave, onClose }) {
 
 /* ================= Lijst detail ================= */
 
-function ListDetail({ list, state, mutate, onClose, myEmail }) {
+function ListDetail({ list, state, mutate, onClose, uid }) {
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [itemEditing, setItemEditing] = useState(null); // {kind:'item'|'extra', id, item, name}
   const [celebrate, setCelebrate] = useState(false);
   const [vertrekModus, setVertrekModus] = useState(false);
-  const [suggesting, setSuggesting] = useState(false);
   const [zoek, setZoek] = useState('');
   const p = listProgress(list);
   const wasDone = useRef(p.done);
@@ -977,6 +1047,49 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
     setPicking(current || true);
   }
 
+  // Delen = bewust een momentopname van dít lijstje publiek zetten.
+  // Locaties, notities en vooraf-acties gaan NIET mee in de snapshot.
+  async function shareList() {
+    let shareId = list.shareId;
+    if (!shareId) {
+      shareId = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+      mutate((s) => {
+        const l = s.lists.find((x) => x.id === list.id);
+        l.shareId = shareId;
+        return s;
+      });
+    }
+    const usedGearIds = new Set(list.items.map((i) => i.gearId));
+    const snapshot = {
+      ownerName: state.email || '',
+      cats: state.cats || CATS,
+      gear: state.gear.filter((g) => usedGearIds.has(g.id)).map((g) => ({ id: g.id, name: g.name, cat: g.cat })),
+      list: {
+        name: list.name,
+        emoji: list.emoji,
+        destination: list.destination || '',
+        people: list.people || 1,
+        color: list.color || '',
+        items: list.items.map((it) => ({ gearId: it.gearId, qty: it.qty })),
+        extras: (list.extras || []).map((it) => ({ name: it.name, qty: it.qty })),
+      },
+    };
+    const url = `${window.location.origin}${window.location.pathname}#share=${shareId}`;
+    try {
+      await upsertShare(shareId, uid, snapshot);
+      try {
+        await navigator.clipboard.writeText(url);
+        alert(`Deel-link gekopieerd!\n\n${url}\n\nDit is een momentopname van dit lijstje (zonder locaties/notities). Opnieuw delen ververst de snapshot.`);
+      } catch {
+        prompt('Deel-link:', url);
+      }
+    } catch (e) {
+      alert(`Delen mislukt: ${e.message}`);
+    }
+  }
+
   const countdown = countdownLabel(list.departure);
   const range = formatDateRange(list.departure, list.returnDate);
   const days = tripDays(list.departure, list.returnDate);
@@ -1003,19 +1116,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
             <span className="muted">ingepakt{p.skipped ? ` · ${p.skipped} niet mee` : ''}</span>
           </div>
           {!editMode && (
-            <button
-              className="btn small secondary"
-              title="Deel-link kopiëren (alleen-lezen, met kopieerknop)"
-              onClick={async () => {
-                const url = `${window.location.origin}${window.location.pathname}#share=${slugify(myEmail)}:${list.id}`;
-                try {
-                  await navigator.clipboard.writeText(url);
-                  alert(`Deel-link gekopieerd!\n\n${url}\n\nIedereen met deze link kan dit lijstje bekijken en naar z'n eigen profiel kopiëren.`);
-                } catch {
-                  prompt('Deel-link:', url);
-                }
-              }}
-            >
+            <button className="btn small secondary" title="Deel-link maken/verversen" onClick={shareList}>
               🔗
             </button>
           )}
@@ -1141,18 +1242,7 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
           >
             📋 Bewaar als template
           </button>
-          <button
-            className="btn small secondary"
-            onClick={async () => {
-              const url = `${window.location.origin}${window.location.pathname}#share=${slugify(myEmail)}:${list.id}`;
-              try {
-                await navigator.clipboard.writeText(url);
-                alert(`Deel-link gekopieerd!\n\n${url}\n\nIedereen met deze link kan dit lijstje lezen.`);
-              } catch {
-                prompt('Deel-link:', url);
-              }
-            }}
-          >
+          <button className="btn small secondary" onClick={shareList}>
             🔗 Deel-link kopiëren
           </button>
           <button
@@ -1351,9 +1441,6 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
         <button className="btn grow" onClick={openPicker}>
           + Spullen toevoegen
         </button>
-        <button className="btn secondary" title="Suggesties van anderen" onClick={() => setSuggesting(true)}>
-          💡
-        </button>
       </div>
 
       {picking && (
@@ -1363,15 +1450,6 @@ function ListDetail({ list, state, mutate, onClose, myEmail }) {
           mutate={mutate}
           initialCat={typeof picking === 'string' ? picking : null}
           onClose={() => setPicking(false)}
-        />
-      )}
-      {suggesting && (
-        <SuggestionsSheet
-          list={list}
-          state={state}
-          myEmail={myEmail}
-          mutate={mutate}
-          onClose={() => setSuggesting(false)}
         />
       )}
       {vertrekModus && (
@@ -1951,132 +2029,6 @@ function CatForm({ cats, current, onSave, onDelete, onMove, onClose }) {
   );
 }
 
-/* ================= Anderen ================= */
-
-function OthersView({ myEmail, mutate, onCopied }) {
-  const [profiles, setProfiles] = useState(null);
-  const [selected, setSelected] = useState(null); // { email, state }
-  const [loadingSlug, setLoadingSlug] = useState(null);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    listCloudProfiles()
-      .then((p) => setProfiles(p.filter((x) => x.slug !== slugify(myEmail))))
-      .catch((e) => setError(e.message));
-  }, [myEmail]);
-
-  async function open(profile) {
-    setLoadingSlug(profile.slug);
-    try {
-      const remote = await loadProfile(profile.slug);
-      if (remote) setSelected({ email: profile.email, state: remote.state });
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoadingSlug(null);
-    }
-  }
-
-  function copyList(theirState, theirList) {
-    mutate((s) => {
-      const myCatIds = new Set((s.cats || CATS).map((c) => c.id));
-      const myGearByName = new Map(s.gear.map((g) => [g.name.toLowerCase(), g]));
-      const theirGearById = Object.fromEntries(theirState.gear.map((g) => [g.id, g]));
-      const items = [];
-      for (const it of theirList.items) {
-        const theirGear = theirGearById[it.gearId];
-        if (!theirGear) continue;
-        let mine = myGearByName.get(theirGear.name.toLowerCase());
-        if (!mine) {
-          mine = { id: uid(), name: theirGear.name, cat: myCatIds.has(theirGear.cat) ? theirGear.cat : 'overig' };
-          s.gear.push(mine);
-          myGearByName.set(mine.name.toLowerCase(), mine);
-        }
-        if (!items.some((x) => x.gearId === mine.id)) items.push({ gearId: mine.id, qty: it.qty || 1, packed: false });
-      }
-      s.lists.push({
-        id: uid(),
-        name: `${theirList.name} (van ${selectedName(theirState)})`,
-        emoji: theirList.emoji || '🧳',
-        note: '',
-        items,
-        extras: (theirList.extras || []).map((it) => ({ id: uid(), name: it.name, qty: it.qty || 1, packed: false })),
-      });
-      return s;
-    });
-    onCopied();
-  }
-
-  function selectedName(theirState) {
-    const addr = theirState.email || selected?.email || '';
-    return addr.split('@')[0] || 'iemand';
-  }
-
-  if (selected) {
-    return (
-      <div className="page">
-        <div className="row">
-          <button className="btn small secondary" onClick={() => setSelected(null)}>
-            ← alle profielen
-          </button>
-          <div className="grow muted" style={{ textAlign: 'right' }}>
-            {selected.email}
-          </div>
-        </div>
-        {selected.state.lists.length === 0 && <div className="empty">Geen lijstjes.</div>}
-        {selected.state.lists.map((list) => {
-          const gearById = Object.fromEntries(selected.state.gear.map((g) => [g.id, g]));
-          return (
-            <div key={list.id} className="card">
-              <div className="row">
-                <span style={{ fontSize: 24 }}>{list.emoji}</span>
-                <div className="grow">
-                  <div className="title">{list.name}</div>
-                  <div className="muted">{list.items.length + (list.extras || []).length} items</div>
-                </div>
-                <button className="btn small" onClick={() => copyList(selected.state, list)}>
-                  ⧉ Kopieer
-                </button>
-              </div>
-              <div className="muted" style={{ marginTop: 8, lineHeight: 1.6 }}>
-                {[
-                  ...list.items.map((it) => {
-                    const g = gearById[it.gearId];
-                    return g ? `${g.name}${it.qty > 1 ? ` ×${it.qty}` : ''}` : null;
-                  }),
-                  ...(list.extras || []).map((it) => `${it.name}${it.qty > 1 ? ` ×${it.qty}` : ''}`),
-                ]
-                  .filter(Boolean)
-                  .join(' · ') || 'leeg'}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <div className="page">
-      <p className="muted" style={{ margin: '0 4px' }}>
-        Bekijk de lijstjes van anderen en kopieer ze naar jezelf om aan te passen.
-      </p>
-      {error && <div className="empty">Kon profielen niet laden: {error}</div>}
-      {profiles === null && !error && <div className="empty">Profielen laden…</div>}
-      {profiles?.length === 0 && <div className="empty"><span className="big">👻</span>Nog niemand anders hier.</div>}
-      {profiles?.map((p) => (
-        <div key={p.slug} className="card tap row" onClick={() => open(p)}>
-          <div className="grow">
-            <div className="title">{p.email}</div>
-            <div className="muted">{p.listCount} lijstjes</div>
-          </div>
-          <span>{loadingSlug === p.slug ? '…' : '→'}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /* ================= Sheet (modal) ================= */
 
 function WeatherInfo({ destination, departure, returnDate }) {
@@ -2385,172 +2337,35 @@ function PrepView({ state, mutate }) {
   );
 }
 
-async function runSuggestions(list, myEmail) {
-  const profiles = await listCloudProfiles();
-  const others = profiles.filter((p) => p.slug !== slugify(myEmail));
-  if (!others.length) return { similar: {}, totalSimilar: 0, all: {}, totalAll: 0 };
-  const fullData = await Promise.all(others.map((p) => loadProfile(p.slug).catch(() => null)));
-
-  const similar = {};
-  let totalSimilar = 0;
-  const all = {};
-  let totalAll = 0;
-  const myDest = list.destination?.toLowerCase().trim() || '';
-
-  for (const data of fullData) {
-    if (!data?.state?.lists) continue;
-    const gearByGearId = Object.fromEntries(data.state.gear.map((g) => [g.id, g]));
-    for (const otherList of data.state.lists) {
-      totalAll++;
-      const names = new Set();
-      for (const it of otherList.items || []) {
-        const n = gearByGearId[it.gearId]?.name;
-        if (n) names.add(n);
-      }
-      for (const it of otherList.extras || []) if (it.name) names.add(it.name);
-      for (const n of names) all[n] = (all[n] || 0) + 1;
-
-      const sameEmoji = otherList.emoji && otherList.emoji === list.emoji;
-      const sameDest = myDest && otherList.destination?.toLowerCase().trim() === myDest;
-      if (sameEmoji || sameDest) {
-        totalSimilar++;
-        for (const n of names) similar[n] = (similar[n] || 0) + 1;
-      }
-    }
-  }
-  return { similar, totalSimilar, all, totalAll };
-}
-
-function SuggestionsSheet({ list, state, myEmail, mutate, onClose }) {
-  const [data, setData] = useState(null);
+function ShareView({ shareId, user, myState, mutate, onClose }) {
+  const [snap, setSnap] = useState(null);
   const [error, setError] = useState(null);
-  useEffect(() => {
-    let cancelled = false;
-    runSuggestions(list, myEmail)
-      .then((d) => !cancelled && setData(d))
-      .catch((e) => !cancelled && setError(e.message));
-    return () => {
-      cancelled = true;
-    };
-  }, [list.id]);
 
-  const myItemNames = useMemo(() => {
-    const out = new Set();
-    const gearById = Object.fromEntries(state.gear.map((g) => [g.id, g]));
-    for (const it of list.items) {
-      const n = gearById[it.gearId]?.name;
-      if (n) out.add(n.toLowerCase());
+  useEffect(() => {
+    // Oude links hadden het formaat slug:listId — die snapshots bestaan niet meer.
+    if (shareId.includes(':')) {
+      setError('Deze deel-link is van de oude app-versie. Vraag een nieuwe link.');
+      return;
     }
-    for (const it of list.extras || []) out.add(it.name.toLowerCase());
-    return out;
-  }, [list, state.gear]);
-
-  function addByName(name) {
-    mutate((s) => {
-      let gear = s.gear.find((g) => g.name.toLowerCase() === name.toLowerCase());
-      if (!gear) {
-        gear = { id: uid(), name, cat: 'overig' };
-        s.gear.push(gear);
-      }
-      const l = s.lists.find((x) => x.id === list.id);
-      if (!l.items.find((it) => it.gearId === gear.id)) {
-        l.items.push({ gearId: gear.id, qty: 1, packed: false, note: '' });
-      }
-      return s;
-    });
-  }
-
-  if (error)
-    return (
-      <Sheet title="💡 Suggesties" onClose={onClose}>
-        <div className="empty">Kon profielen niet laden: {error}</div>
-      </Sheet>
-    );
-  if (!data)
-    return (
-      <Sheet title="💡 Suggesties" onClose={onClose}>
-        <div className="empty">Zoeken in andere profielen…</div>
-      </Sheet>
-    );
-
-  const useSimilar = data.totalSimilar > 0;
-  const source = useSimilar ? data.similar : data.all;
-  const total = useSimilar ? data.totalSimilar : data.totalAll;
-  const sorted = Object.entries(source)
-    .filter(([n]) => !myItemNames.has(n.toLowerCase()))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 30);
-
-  return (
-    <Sheet title="💡 Suggesties van anderen" onClose={onClose}>
-      <p className="muted">
-        {useSimilar
-          ? `Gebaseerd op ${total} vergelijkbare ${total === 1 ? 'lijstje' : 'lijstjes'} (zelfde emoji${list.destination ? ' of bestemming' : ''}).`
-          : total
-          ? `Geen vergelijkbare reizen gevonden — populairste items van alle ${total} lijstjes:`
-          : 'Er zijn nog geen andere profielen om van te leren.'}
-      </p>
-      {total === 0 && (
-        <div className="empty">
-          <span className="big">👻</span>
-          Geen anderen actief.
-        </div>
-      )}
-      {sorted.length === 0 && total > 0 && (
-        <div className="empty">
-          <span className="big">🎯</span>
-          Niks nieuws — jij hebt alles al!
-        </div>
-      )}
-      {sorted.map(([name, count]) => {
-        const pct = Math.round((count / total) * 100);
-        const inBak = state.gear.some((g) => g.name.toLowerCase() === name.toLowerCase());
-        return (
-          <div key={name} className="itemrow">
-            <span className="name">{name}</span>
-            <span className="badge">{pct}%</span>
-            {inBak && <span className="muted" style={{ fontSize: 11 }}>in {state.bakName || 'De Bak'}</span>}
-            <button className="btn small" onClick={() => addByName(name)}>
-              +
-            </button>
-          </div>
-        );
-      })}
-    </Sheet>
-  );
-}
-
-function ShareView({ share, myEmail, myState, mutate, onClose }) {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
-  useEffect(() => {
-    loadProfile(share.slug)
-      .then((r) => {
-        if (!r?.state) {
-          setError('Profiel of lijstje niet gevonden.');
-          return;
-        }
-        const list = r.state.lists?.find((l) => l.id === share.listId);
-        if (!list) {
-          setError('Dit lijstje bestaat niet (meer).');
-          return;
-        }
-        setData({ profile: r.state, list });
+    loadShare(shareId)
+      .then((d) => {
+        if (!d) setError('Dit gedeelde lijstje bestaat niet (meer).');
+        else setSnap(d);
       })
       .catch((e) => setError(e.message));
-  }, [share.slug, share.listId]);
+  }, [shareId]);
 
   function copyToMine() {
-    if (!myEmail) {
-      alert('Log eerst zelf in om dit lijstje te kopiëren naar je eigen Bak.');
+    if (!user || !myState) {
+      alert('Log eerst in (en rond je start af) om dit lijstje naar je eigen profiel te kopiëren.');
       return;
     }
     mutate((s) => {
       const myCatIds = new Set((s.cats || CATS).map((c) => c.id));
       const myGearByName = new Map(s.gear.map((g) => [g.name.toLowerCase(), g]));
-      const theirGearById = Object.fromEntries(data.profile.gear.map((g) => [g.id, g]));
+      const theirGearById = Object.fromEntries((snap.gear || []).map((g) => [g.id, g]));
       const items = [];
-      for (const it of data.list.items) {
+      for (const it of snap.list.items || []) {
         const theirGear = theirGearById[it.gearId];
         if (!theirGear) continue;
         let mine = myGearByName.get(theirGear.name.toLowerCase());
@@ -2563,16 +2378,16 @@ function ShareView({ share, myEmail, myState, mutate, onClose }) {
       }
       s.lists.push({
         id: uid(),
-        name: `${data.list.name} (van ${data.profile.email || share.slug})`,
-        emoji: data.list.emoji || '🧳',
+        name: `${snap.list.name}${snap.ownerName ? ` (van ${snap.ownerName})` : ''}`,
+        emoji: snap.list.emoji || '🧳',
         note: '',
-        destination: data.list.destination || '',
+        destination: snap.list.destination || '',
         departure: '',
         returnDate: '',
-        people: data.list.people || 1,
-        color: data.list.color || '',
+        people: snap.list.people || 1,
+        color: snap.list.color || '',
         items,
-        extras: (data.list.extras || []).map((it) => ({ id: uid(), name: it.name, qty: it.qty || 1, packed: false })),
+        extras: (snap.list.extras || []).map((it) => ({ id: uid(), name: it.name, qty: it.qty || 1, packed: false })),
       });
       return s;
     });
@@ -2580,65 +2395,67 @@ function ShareView({ share, myEmail, myState, mutate, onClose }) {
     onClose();
   }
 
+  const cats = snap?.cats || CATS;
+  const gearById = snap ? Object.fromEntries((snap.gear || []).map((g) => [g.id, g])) : {};
+  const known = new Set(cats.map((c) => c.id));
+
   return (
     <div className="app">
       <header className="header">
         <h1>
           🔗 Gedeeld lijstje
-          <span className="sub">door {data?.profile?.email || share.slug}</span>
+          <span className="sub">{snap?.ownerName ? `door ${snap.ownerName}` : ''}</span>
         </h1>
         <button className="linkbtn" onClick={onClose}>
-          {myEmail ? '← terug' : 'sluiten'}
+          {user ? '← terug' : 'sluiten'}
         </button>
       </header>
       <div className="page">
         {error && <div className="empty">{error}</div>}
-        {!error && !data && <div className="empty">Laden…</div>}
-        {data && (
+        {!error && !snap && <div className="empty">Laden…</div>}
+        {snap && (
           <>
             <div className="card">
               <div className="row">
-                <span style={{ fontSize: 26 }}>{data.list.emoji}</span>
+                <span style={{ fontSize: 26 }}>{snap.list.emoji}</span>
                 <div className="grow">
-                  <div className="title">{data.list.name}</div>
-                  <div className="muted">{data.list.items.length + (data.list.extras || []).length} items</div>
+                  <div className="title">{snap.list.name}</div>
+                  <div className="muted">
+                    {(snap.list.items?.length || 0) + (snap.list.extras?.length || 0)} items
+                    {snap.list.destination ? ` · 📍 ${snap.list.destination}` : ''}
+                  </div>
                 </div>
               </div>
             </div>
             <button className="btn" onClick={copyToMine}>
               ⧉ Kopieer naar mijn lijstjes
             </button>
-            {(() => {
-              const gearById = Object.fromEntries(data.profile.gear.map((g) => [g.id, g]));
-              const cats = data.profile.cats || CATS;
-              const known = new Set(cats.map((c) => c.id));
-              return cats.map((cat) => {
-                const items = data.list.items.filter((it) => {
-                  const c = gearById[it.gearId]?.cat;
-                  return (known.has(c) ? c : 'overig') === cat.id;
-                });
-                if (!items.length) return null;
-                return (
-                  <div key={cat.id} className="catsec">
-                    <h3>{cat.emoji} {cat.name}</h3>
-                    {items.map((it) => {
-                      const g = gearById[it.gearId];
-                      return (
-                        <div key={it.gearId} className="itemrow">
-                          <span className="name">{g?.name}</span>
-                          {it.qty > 1 && <span className="muted">× {it.qty}</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
+            {cats.map((cat) => {
+              const items = (snap.list.items || []).filter((it) => {
+                const c = gearById[it.gearId]?.cat;
+                return (known.has(c) ? c : 'overig') === cat.id;
               });
-            })()}
-            {(data.list.extras || []).length > 0 && (
+              if (!items.length) return null;
+              return (
+                <div key={cat.id} className="catsec">
+                  <h3>{cat.emoji} {cat.name}</h3>
+                  {items.map((it) => {
+                    const g = gearById[it.gearId];
+                    return (
+                      <div key={it.gearId} className="itemrow">
+                        <span className="name">{g?.name}</span>
+                        {it.qty > 1 && <span className="muted">× {it.qty}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+            {(snap.list.extras || []).length > 0 && (
               <div className="catsec">
                 <h3>✨ Los in dit lijstje</h3>
-                {data.list.extras.map((it) => (
-                  <div key={it.id} className="itemrow">
+                {snap.list.extras.map((it, i) => (
+                  <div key={i} className="itemrow">
                     <span className="name">{it.name}</span>
                     {it.qty > 1 && <span className="muted">× {it.qty}</span>}
                   </div>

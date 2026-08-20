@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+vi.mock('../src/cloud.js', async () => await import('./cloudMock.js'));
 import React from 'react';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import App from '../src/App.jsx';
@@ -13,10 +15,7 @@ describe('Vertrek-modus', () => {
 
   it('behandelt elk item precies één keer, zonder overslaan', async () => {
     render(<App />);
-    fireEvent.change(screen.getByPlaceholderText('Gebruikersnaam, bijv. laurens'), {
-      target: { value: 'vertrektest' },
-    });
-    fireEvent.click(screen.getByText('Verder →'));
+    fireEvent.click(await waitFor(() => screen.getByText('🌱 Start met een verse Bak'), { timeout: 8000 }));
     await waitFor(() => screen.getByText(/Zomervakantie/), { timeout: 8000 });
     fireEvent.click(screen.getByText(/Zomervakantie/));
     fireEvent.click(await waitFor(() => screen.getByText(/Vertrek-modus/)));
@@ -35,10 +34,7 @@ describe('Vertrek-modus', () => {
 
   it('geen "Vakantie ready" zolang er overgeslagen items zijn; rondje twee pakt ze op', async () => {
     render(<App />);
-    fireEvent.change(screen.getByPlaceholderText('Gebruikersnaam, bijv. laurens'), {
-      target: { value: 'vertrektest2' },
-    });
-    fireEvent.click(screen.getByText('Verder →'));
+    fireEvent.click(await waitFor(() => screen.getByText('🌱 Start met een verse Bak'), { timeout: 8000 }));
     await waitFor(() => screen.getByText(/Zomervakantie/), { timeout: 8000 });
     fireEvent.click(screen.getByText(/Zomervakantie/));
     fireEvent.click(await waitFor(() => screen.getByText(/Vertrek-modus/)));

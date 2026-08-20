@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+vi.mock('../src/cloud.js', async () => await import('./cloudMock.js'));
 import React from 'react';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import App from '../src/App.jsx';
@@ -18,11 +20,7 @@ describe('Picker: toevoegen via zoeken', () => {
   async function openVoorbeeldlijst() {
     render(<App />);
     // inloggen
-    fireEvent.change(screen.getByPlaceholderText('Gebruikersnaam, bijv. laurens'), {
-      target: { value: 'testje' },
-    });
-    fireEvent.click(screen.getByText('Verder →'));
-    // wacht tot main met voorbeeldlijst er staat
+    fireEvent.click(await waitFor(() => screen.getByText('🌱 Start met een verse Bak'), { timeout: 8000 }));
     await waitFor(() => screen.getByText(/Zomervakantie/), { timeout: 8000 });
     fireEvent.click(screen.getByText(/Zomervakantie/));
     await waitFor(() => screen.getByText('+ Spullen toevoegen'));

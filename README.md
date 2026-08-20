@@ -7,15 +7,13 @@ Mobile-first web-app voor vakantie-paklijstjes: één **Bak** met al je spullen,
 - **📦 De Bak** — al je spullen, ingedeeld in categorieën (kleding, kamperen, wintersport, …). Nieuwe profielen starten met een gevulde voorbeeld-Bak.
 - **🧳 Lijstjes** — per vakantie een lijst; items kies je uit de Bak, met aantal en vinkje. Progress-balk, dupliceren, vinkjes resetten.
 - **✨ Losse items** — dingen die alleen in één lijstje horen (en niet in de Bak), zoals "cadeau voor oma".
-- **👥 Anderen** — bekijk lijstjes van andere profielen en kopieer ze naar jezelf; ontbrekende spullen worden automatisch aan je eigen Bak toegevoegd.
-- **Login met alleen een gebruikersnaam** — geen wachtwoord, geen e-mail; elke naam is een eigen profiel met eigen Bak + lijstjes. Alles is openbaar.
-- **Persistent + realtime** — data staat in Supabase, met localStorage als cache/offline-fallback en realtime sync tussen apparaten.
+- **🔗 Delen** — een lijstje delen zet bewust een momentopname (zonder locaties/notities) achter een deel-link; de ontvanger kan meekijken en kopiëren naar het eigen account.
+- **Login met magic-link** — e-mail invullen, link in je mail, klaar. Geen wachtwoord.
+- **Privé + realtime** — je data staat in Supabase achter row-level security: alleen jij kunt je eigen Bak en lijstjes lezen/schrijven. localStorage als cache/offline-fallback, realtime sync tussen apparaten.
 
 ## Database
 
-Eigen gratis Supabase-project met één key-value tabel `paklijst_shared` (anon read/write + realtime), key per profiel: `paklijst:v1:<email-slug>`. Eenmalige setup staat in [SUPABASE_SETUP.md](SUPABASE_SETUP.md); de keepalive-workflow houdt het gratis project wakker zodat het niet auto-pauzeert.
-
-> ⚠️ Beveiligingsniveau is "hobby-app": er is geen echte authenticatie en iedereen met de anon key kan alle profielen lezen/schrijven. Zet er niks geheims in.
+Eigen gratis Supabase-project met Supabase Auth (magic-link) en twee tabellen: `profiles` (RLS: alleen de eigenaar) en `shared_lists` (expliciet gedeelde snapshots, publiek leesbaar). Setup staat in [SUPABASE_SETUP.md](SUPABASE_SETUP.md); de keepalive-workflow houdt het gratis project wakker zodat het niet auto-pauzeert.
 
 ## Ontwikkelen
 

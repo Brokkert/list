@@ -1,12 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Eigen Supabase-project voor de paklijst-app (zie SUPABASE_SETUP.md).
-// paklijst_shared is een key-value store (id text pk, state text, updated_at)
-// met anon read/write + realtime; elke rij is één profiel.
+// Supabase met echte accounts (zie SUPABASE_SETUP.md):
+// - auth via magic-link (e-mail, geen wachtwoord)
+// - tabel `profiles` (id uuid = auth-uid, state text, updated_at) met RLS:
+//   alleen de eigenaar kan z'n eigen rij lezen/schrijven
+// - tabel `shared_lists` (id text, owner uuid, data text): expliciet gedeelde
+//   lijst-snapshots, publiek leesbaar, alleen door de eigenaar te schrijven
+// - legacy: `paklijst_shared` (open key-value) blijft bestaan voor eenmalige
+//   import van oude profielen en voor de keepalive-ping
 const SUPABASE_URL = 'https://anglxcniiktoenoqapqz.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_qyGsqcHIofui-1rI0WZadQ_cb91iv26';
-const TABLE = 'paklijst_shared';
-const PREFIX = 'paklijst:v1:';
+const TABLE = 'profiles';
+const LEGACY_TABLE = 'paklijst_shared';
+const LEGACY_PREFIX = 'paklijst:v1:';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: { params: { eventsPerSecond: 5 } },
@@ -22,58 +28,44 @@ export function slugify(name) {
     .replace(/^-+|-+$/g, '');
 }
 
-const keyFor = (slug) => PREFIX + slug;
+/* ---------------- auth ---------------- */
 
-export async function listCloudProfiles() {
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('id, state, updated_at')
-    .like('id', `${PREFIX}%`);
-  if (error) {
-    lastError = error.message;
-    setStatus('error');
-    throw error;
-  }
-  return (data || []).map((row) => {
-    const slug = row.id.slice(PREFIX.length);
-    let email = slug;
-    let listCount = 0;
-    try {
-      const s = JSON.parse(row.state);
-      if (s?.email) email = s.email;
-      listCount = s?.lists?.length || 0;
-    } catch {
-      /* corrupt rows tonen we gewoon op slug */
-    }
-    return { slug, email, listCount, updatedAt: row.updated_at };
+export async function getSessionUser() {
+  const { data } = await supabase.auth.getSession();
+  return data?.session?.user || null;
+}
+
+export function onAuth(cb) {
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    cb(session?.user || null);
   });
+  return () => data.subscription.unsubscribe();
 }
 
-let lastKnownUpdatedAt = null;
-
-export async function loadProfile(slug) {
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('state, updated_at')
-    .eq('id', keyFor(slug))
-    .maybeSingle();
-  if (error) {
-    lastError = error.message;
-    setStatus('error');
-    throw error;
-  }
-  setStatus('online');
-  if (!data?.state) return null;
-  lastKnownUpdatedAt = data.updated_at;
-  return { state: JSON.parse(data.state), updatedAt: data.updated_at };
+export async function signInWithEmail(email) {
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: window.location.origin + window.location.pathname,
+    },
+  });
+  if (error) throw error;
 }
+
+export async function signOut() {
+  await supabase.auth.signOut();
+}
+
+/* ---------------- status ---------------- */
 
 let saveTimer = null;
 let lastSavedUpdatedAt = null;
+let lastKnownUpdatedAt = null;
 let statusListeners = new Set();
 let status = 'offline'; // offline | syncing | online | error
 let lastError = null;
-let pending = null; // laatste niet-opgeslagen { slug, state }
+let pending = null; // laatste niet-opgeslagen { uid, state }
+let inflight = false;
 
 function setStatus(s) {
   status = s;
@@ -90,7 +82,24 @@ export function onStatus(fn) {
   return () => statusListeners.delete(fn);
 }
 
-let inflight = false;
+/* ---------------- profiel (eigen rij, RLS) ---------------- */
+
+export async function loadProfile(uid) {
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select('state, updated_at')
+    .eq('id', uid)
+    .maybeSingle();
+  if (error) {
+    lastError = error.message;
+    setStatus('error');
+    throw error;
+  }
+  setStatus('online');
+  if (!data?.state) return null;
+  lastKnownUpdatedAt = data.updated_at;
+  return { state: JSON.parse(data.state), updatedAt: data.updated_at };
+}
 
 async function flushSave() {
   if (!pending || inflight) return;
@@ -101,7 +110,7 @@ async function flushSave() {
   try {
     ({ error } = await supabase
       .from(TABLE)
-      .upsert({ id: keyFor(job.slug), state: JSON.stringify(job.state), updated_at }, { onConflict: 'id' }));
+      .upsert({ id: job.uid, state: JSON.stringify(job.state), updated_at }, { onConflict: 'id' }));
   } catch (e) {
     error = e;
   }
@@ -118,40 +127,33 @@ async function flushSave() {
     lastKnownUpdatedAt = updated_at;
     lastError = null;
     if (pending === job) {
-      // niks nieuws binnengekomen tijdens het opslaan
       pending = null;
       setStatus('online');
     } else {
-      // er staat alweer een nieuwere state klaar: direct doorsparen
       clearTimeout(saveTimer);
       saveTimer = setTimeout(flushSave, 100);
     }
   }
 }
 
-export function saveProfileDebounced(slug, state) {
-  pending = { slug, state };
+export function saveProfileDebounced(uid, state) {
+  pending = { uid, state };
   clearTimeout(saveTimer);
   setStatus('syncing');
   saveTimer = setTimeout(flushSave, 700);
 }
 
-export async function deleteProfile(slug) {
-  const { error } = await supabase.from(TABLE).delete().eq('id', keyFor(slug));
-  if (error) throw error;
-}
-
-export function subscribeProfile(slug, onRemoteState) {
+export function subscribeProfile(uid, onRemoteState) {
   const apply = (state, updatedAt) => {
     lastKnownUpdatedAt = updatedAt || lastKnownUpdatedAt;
     onRemoteState(state);
   };
 
   const channel = supabase
-    .channel(`paklijst_${slug}`)
+    .channel(`paklijst_${uid}`)
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: TABLE, filter: `id=eq.${keyFor(slug)}` },
+      { event: '*', schema: 'public', table: TABLE, filter: `id=eq.${uid}` },
       (payload) => {
         const row = payload.new;
         if (!row?.state) return;
@@ -164,8 +166,6 @@ export function subscribeProfile(slug, onRemoteState) {
       }
     )
     .subscribe((s) => {
-      // Realtime is een nice-to-have: een kapot kanaal is geen sync-fout,
-      // de polling hieronder vangt wijzigingen alsnog op.
       if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') {
         console.warn('[paklijst] realtime-kanaal:', s);
       }
@@ -173,12 +173,12 @@ export function subscribeProfile(slug, onRemoteState) {
 
   // Polling-fallback: elke 30s checken of een ander apparaat iets wijzigde.
   const poll = setInterval(async () => {
-    if (pending) return; // eigen wijziging onderweg, niet overschrijven
+    if (pending) return;
     try {
       const { data, error } = await supabase
         .from(TABLE)
         .select('state, updated_at')
-        .eq('id', keyFor(slug))
+        .eq('id', uid)
         .maybeSingle();
       if (error || !data?.state) return;
       if (data.updated_at && data.updated_at !== lastKnownUpdatedAt && data.updated_at !== lastSavedUpdatedAt) {
@@ -193,4 +193,50 @@ export function subscribeProfile(slug, onRemoteState) {
     clearInterval(poll);
     supabase.removeChannel(channel);
   };
+}
+
+/* ---------------- delen (expliciete snapshots) ---------------- */
+
+export async function upsertShare(id, ownerUid, data) {
+  const { error } = await supabase
+    .from('shared_lists')
+    .upsert(
+      { id, owner: ownerUid, data: JSON.stringify(data), updated_at: new Date().toISOString() },
+      { onConflict: 'id' }
+    );
+  if (error) throw error;
+}
+
+export async function loadShare(id) {
+  const { data, error } = await supabase
+    .from('shared_lists')
+    .select('data, updated_at')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.data) return null;
+  return JSON.parse(data.data);
+}
+
+export async function deleteShare(id) {
+  const { error } = await supabase.from('shared_lists').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/* ---------------- legacy (oude open tabel, voor import) ---------------- */
+
+export async function legacyLoadProfile(slug) {
+  const { data, error } = await supabase
+    .from(LEGACY_TABLE)
+    .select('state, updated_at')
+    .eq('id', LEGACY_PREFIX + slug)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.state) return null;
+  return JSON.parse(data.state);
+}
+
+export async function legacyDeleteProfile(slug) {
+  const { error } = await supabase.from(LEGACY_TABLE).delete().eq('id', LEGACY_PREFIX + slug);
+  if (error) throw error;
 }
